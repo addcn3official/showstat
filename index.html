@@ -176,6 +176,14 @@
   .chart-card .cap{ font-size:11.5px; color:var(--text-muted); margin-bottom:8px; }
   .chart-wrap{ position:relative; height:220px; }
   .chart-wrap.small{ height:200px; }
+  /* The OCA status chart grows one row per จุดรวมงาน, which can get very tall when
+     there are many offices - on a phone that would bury the whole page under one
+     giant chart. This outer box caps how tall it gets and scrolls internally instead,
+     so the rest of the page (event list, etc.) stays reachable right below it. */
+  .chart-scroll-outer{ max-height:480px; overflow-y:auto; overflow-x:hidden; border-radius:8px; }
+  @media (max-width: 520px){
+    .chart-scroll-outer{ max-height:320px; }
+  }
   .empty-chart{
     display:flex; align-items:center; justify-content:center; height:100%;
     color:var(--text-muted); font-size:12.5px;
@@ -351,8 +359,8 @@
       <div class="chart-grid" id="ocaChartsGrid">
         <div class="chart-card full" id="ocaStatusCardWrap" style="display:none;">
           <h3>สถานะการคำนวณ OCA ตาม กฟฟ. จุดรวมงาน</h3>
-          <div class="cap">จำนวนเหตุการณ์ในแต่ละจุดรวมงาน แบ่งตามว่าคำนวณ OCA แล้วหรือยัง</div>
-          <div class="chart-wrap"><canvas id="ocaStatusChart"></canvas></div>
+          <div class="cap">จำนวนเหตุการณ์ในแต่ละจุดรวมงาน แบ่งตามว่าคำนวณ OCA แล้วหรือยัง · คลิกป้ายกำกับด้านล่างกราฟเพื่อกรองรายการ</div>
+          <div class="chart-scroll-outer" id="ocaStatusScroll"><div class="chart-wrap" id="ocaStatusWrap"><canvas id="ocaStatusChart"></canvas></div></div>
         </div>
       </div>
 
@@ -432,6 +440,8 @@ const TABS = {
       causeCategory: 'ประเภทสาเหตุ',
       weather: 'สภาพอากาศ',
       operation: 'การทำงาน',
+      phase: 'เฟส',
+      distance: 'ระยะทาง',
       graphStatus: 'กราฟ OCA',
       calcStatus: 'คิด OCA'
     },
@@ -455,12 +465,6 @@ let ALL_WORKCENTERS_ORDERED = [];
 // falling back to the work-center hierarchy above otherwise.
 let STATION_TO_PROVINCE = {};
 let CIRCUIT_TO_PROVINCE = {};
-// จังหวัด -> สถานีไฟฟ้า -> รหัสอุปกรณ์ hierarchy, also loaded live from the "Province"
-// sheet, so picking a province narrows the substation list and picking a
-// substation narrows the circuit/equipment-code list.
-let PROVINCE_TO_STATIONS = {};
-let STATION_TO_CIRCUITS = {};
-let PROVINCE_TO_CIRCUITS = {};
 let referenceDataLoaded = { response: false, province: false };
 function provinceWorkcenters(prov) { return prov ? Object.keys(PEA_HIERARCHY[prov] || {}) : []; }
 function stripProvincePrefix(v) { return (v || '').toString().replace(/^จังหวัด/, '').trim(); }
@@ -483,7 +487,7 @@ function todayRange() {
 }
 Object.keys(TABS).forEach(k => {
   const r = todayRange();
-  TABS[k].filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false };
+  TABS[k].filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false, doneOnly: false };
   TABS[k].state = { cols: null, rows: [], loading: false, loaded: false, error: null, lastFetch: null, listLimit: 20, fieldCols: null, dateCol: null, timeCol: null, usingCache: false, cachedAt: null };
 });
 let activeTab = 'outage';
@@ -636,8 +640,13 @@ function loadReferenceData() {
 
   fetchGvizJsonp(SHARED_SHEET_ID, 'Province', function (result) {
     const cols = result.cols;
+    // NOTE: this sheet's own "สถานีไฟฟ้า" column is a short station CODE (e.g.
+    // "BNA"), matching the prefix of รหัสอุปกรณ์ - not the descriptive Thai
+    // station names used in ไฟขัดข้อง/OCA. So we only trust the circuit-code
+    // join here (reliable, verbatim-matching values) and leave grouping by
+    // station/circuit to refreshCascadeOptions, computed from the tab's own
+    // loaded rows instead.
     const stMap = {}, circMap = {};
-    const provToStations = {}, stationToCircuits = {}, provToCircuits = {};
     result.rows.forEach(row => {
       const station = cellText(row[cols[0]]).trim();
       const circuit = cellText(row[cols[1]]).trim();
@@ -645,24 +654,9 @@ function loadReferenceData() {
       if (!prov) return;
       if (circuit && !circMap[circuit]) circMap[circuit] = prov;
       if (station && !stMap[station]) stMap[station] = prov;
-      if (station) {
-        if (!provToStations[prov]) provToStations[prov] = [];
-        if (!provToStations[prov].includes(station)) provToStations[prov].push(station);
-      }
-      if (station && circuit) {
-        if (!stationToCircuits[station]) stationToCircuits[station] = [];
-        if (!stationToCircuits[station].includes(circuit)) stationToCircuits[station].push(circuit);
-      }
-      if (circuit) {
-        if (!provToCircuits[prov]) provToCircuits[prov] = [];
-        if (!provToCircuits[prov].includes(circuit)) provToCircuits[prov].push(circuit);
-      }
     });
     STATION_TO_PROVINCE = stMap;
     CIRCUIT_TO_PROVINCE = circMap;
-    PROVINCE_TO_STATIONS = provToStations;
-    STATION_TO_CIRCUITS = stationToCircuits;
-    PROVINCE_TO_CIRCUITS = provToCircuits;
     referenceDataLoaded.province = true;
     Object.keys(TABS).forEach(t => { if (TABS[t].state.loaded) refreshCascadeOptions(t); });
     renderAll();
@@ -817,6 +811,9 @@ function getFilteredRows(tab) {
     if (tab === 'oca' && f.pendingOnly) {
       if (classifyCalcStatus(cellText(F(tab, row, 'calcStatus'))) !== 'pending') return false;
     }
+    if (tab === 'oca' && f.doneOnly) {
+      if (classifyCalcStatus(cellText(F(tab, row, 'calcStatus'))) !== 'done') return false;
+    }
     return true;
   });
 }
@@ -955,6 +952,20 @@ function classifyCalcStatus(text) {
   if (!t) return 'pending';
   return /ยัง/.test(t) ? 'pending' : 'done';
 }
+// Clicking the OCA-status chart's legend (or a bar) isolates that status: click again
+// to go back to showing both. Drives the same filter used elsewhere (event list, KPIs).
+function toggleOcaCalcStatusFilter(key) {
+  const f = TABS.oca.filters;
+  if (key === 'done') {
+    f.doneOnly = !f.doneOnly; if (f.doneOnly) f.pendingOnly = false;
+  } else {
+    f.pendingOnly = !f.pendingOnly; if (f.pendingOnly) f.doneOnly = false;
+  }
+  renderAll();
+}
+function onOcaLegendClick(evt, legendItem) {
+  toggleOcaCalcStatusFilter(legendItem.datasetIndex === 0 ? 'done' : 'pending');
+}
 function renderOcaStatusChart(tab, rows) {
   const canvas = document.getElementById('ocaStatusChart');
   const wrap = canvas.parentElement;
@@ -990,8 +1001,30 @@ function renderOcaStatusChart(tab, rows) {
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        const key = elements[0].datasetIndex === 0 ? 'done' : 'pending';
+        toggleOcaCalcStatusFilter(key);
+      },
       plugins: {
-        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10 } },
+        legend: {
+          position: 'bottom', onClick: onOcaLegendClick,
+          labels: {
+            color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10,
+            generateLabels: (chart) => {
+              const f = TABS.oca.filters;
+              return chart.data.datasets.map((ds, i) => {
+                const key = i === 0 ? 'done' : 'pending';
+                const dimmed = (f.doneOnly && key !== 'done') || (f.pendingOnly && key !== 'pending');
+                return {
+                  text: ds.label, fillStyle: ds.backgroundColor, strokeStyle: ds.backgroundColor,
+                  fontColor: dimmed ? cssVar('--text-muted') : cssVar('--text-secondary'),
+                  hidden: false, datasetIndex: i
+                };
+              });
+            }
+          }
+        },
         tooltip: { callbacks: { label: (item) => ' ' + item.dataset.label + ': ' + item.formattedValue + ' ครั้ง' } }
       },
       scales: {
@@ -1136,6 +1169,7 @@ function buildEventCard(tab, row) {
     if (found) { const bad = /ไม่พบ/i.test(found); addTag(found, bad ? 'status-bad' : 'status-good'); }
     addTag(cellText(F(tab, row, 'causeCategory')));
     addTag(cellText(F(tab, row, 'weather')));
+    const phase = cellText(F(tab, row, 'phase')); if (phase) addTag('เฟส ' + phase);
   }
   if (tags.childNodes.length) card.appendChild(tags);
 
@@ -1150,6 +1184,7 @@ function buildEventCard(tab, row) {
     const area = cellText(F(tab, row, 'affectedArea')); if (area) metaParts.push('พื้นที่ผลกระทบ: ' + area);
   } else {
     const wc = cellText(F(tab, row, 'workcenter')); if (wc) metaParts.push('จุดรวมงาน: ' + wc);
+    const dist = cellText(F(tab, row, 'distance')); if (dist) metaParts.push('ระยะทาง: ' + dist + ' กม.');
   }
   if (metaParts.length) { meta.textContent = metaParts.join(' · '); card.appendChild(meta); }
 
@@ -1264,34 +1299,53 @@ function refreshCascadeOptions(tab) {
     if (!respOptions.includes(f.responsible)) f.responsible = '';
   }
 
-  // จังหวัด -> สถานีไฟฟ้า -> รหัสอุปกรณ์ (from the "Province" sheet)
+  // จังหวัด -> สถานีไฟฟ้า -> รหัสอุปกรณ์.
+  // NOTE: the "Province" sheet's own "สถานีไฟฟ้า" column holds short station CODES
+  // (e.g. "BNA") that are really just the prefix of รหัสอุปกรณ์ - they are NOT the
+  // same text as the descriptive Thai station names used in the ไฟขัดข้อง/OCA
+  // sheets (e.g. "นครสวรรค์ 2"). So we can't group stations via that sheet's own
+  // station column. รหัสอุปกรณ์ (circuit code) IS shared verbatim between sheets
+  // though, so we derive station/circuit options straight from the tab's own
+  // loaded rows, grouped by province via rowProvince() (which resolves province
+  // from the row's circuit code - the one reliable join key).
   if (avail.includes('substation')) {
-    const dataSt = dataValues(tab, 'substation');
     let stOptions;
     if (f.province) {
-      const provSt = PROVINCE_TO_STATIONS[f.province] || [];
-      const inData = provSt.filter(s => dataSt.has(s));
-      stOptions = inData.length ? inData : provSt;
+      const set = new Set();
+      (cfg.state.rows || []).forEach(row => {
+        const st = cellText(F(tab, row, 'substation')).trim();
+        if (st && rowProvince(tab, row) === f.province) set.add(st);
+      });
+      stOptions = Array.from(set).sort((a, b) => a.localeCompare(b, 'th'));
     } else {
-      stOptions = Array.from(dataSt).sort((a, b) => a.localeCompare(b, 'th'));
+      stOptions = Array.from(dataValues(tab, 'substation')).sort((a, b) => a.localeCompare(b, 'th'));
     }
     fillSelectOptions('fSubstation', stOptions, f.substation);
     if (!stOptions.includes(f.substation)) f.substation = '';
   }
 
   if (avail.includes('circuit')) {
-    const dataCk = dataValues(tab, 'circuit');
     let ckOptions;
-    if (f.substation && STATION_TO_CIRCUITS[f.substation]) {
-      const stCk = STATION_TO_CIRCUITS[f.substation];
-      const inData = stCk.filter(c => dataCk.has(c));
-      ckOptions = inData.length ? inData : stCk;
-    } else if (f.province && PROVINCE_TO_CIRCUITS[f.province]) {
-      const provCk = PROVINCE_TO_CIRCUITS[f.province];
-      const inData = provCk.filter(c => dataCk.has(c));
-      ckOptions = inData.length ? inData : provCk;
+    if (f.substation) {
+      const set = new Set();
+      (cfg.state.rows || []).forEach(row => {
+        if (cellText(F(tab, row, 'substation')).trim() === f.substation) {
+          const ck = cellText(F(tab, row, 'circuit')).trim();
+          if (ck) set.add(ck);
+        }
+      });
+      ckOptions = Array.from(set).sort((a, b) => a.localeCompare(b, 'th'));
+    } else if (f.province) {
+      const set = new Set();
+      (cfg.state.rows || []).forEach(row => {
+        if (rowProvince(tab, row) === f.province) {
+          const ck = cellText(F(tab, row, 'circuit')).trim();
+          if (ck) set.add(ck);
+        }
+      });
+      ckOptions = Array.from(set).sort((a, b) => a.localeCompare(b, 'th'));
     } else {
-      ckOptions = Array.from(dataCk).sort((a, b) => a.localeCompare(b, 'th'));
+      ckOptions = Array.from(dataValues(tab, 'circuit')).sort((a, b) => a.localeCompare(b, 'th'));
     }
     fillSelectOptions('fCircuit', ckOptions, f.circuit);
     if (!ckOptions.includes(f.circuit)) f.circuit = '';
@@ -1311,6 +1365,7 @@ function updateFilterCount(tab) {
   if (f.preset !== 'today') n++;
   effectiveAvailable(tab).forEach(k => { if (f[k]) n++; });
   if (tab === 'oca' && f.pendingOnly) n++;
+  if (tab === 'oca' && f.doneOnly) n++;
   document.getElementById('filterCount').textContent = n ? ('ใช้ตัวกรอง ' + n + ' รายการ') : '';
 }
 function updateRefreshBtn() {
@@ -1524,6 +1579,8 @@ function currentExportColumns(tab) {
     ['เวลา', r => cellText(Tm(tab, r))],
     ['รหัสอุปกรณ์', r => cellText(F(tab, r, 'circuit'))],
     ['กฟฟ.จุดรวมงาน', r => cellText(F(tab, r, 'workcenter'))],
+    ['เฟส', r => cellText(F(tab, r, 'phase'))],
+    ['ระยะทาง', r => cellText(F(tab, r, 'distance'))],
     ['พบ/ไม่พบ', r => cellText(F(tab, r, 'found'))],
     ['สาเหตุ', r => cellText(F(tab, r, 'cause'))],
     ['ประเภทสาเหตุ', r => cellText(F(tab, r, 'causeCategory'))],
@@ -1618,7 +1675,7 @@ document.getElementById('nextDayBtn').addEventListener('click', () => shiftDay(a
 document.getElementById('clearBtn').addEventListener('click', () => {
   const cfg = TABS[activeTab];
   const r = todayRange();
-  cfg.filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false };
+  cfg.filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false, doneOnly: false };
   cfg.state.listLimit = 20;
   refreshCascadeOptions(activeTab);
   renderAll();
