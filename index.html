@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>สรุปเหตุการณ์ไฟฟ้าขัดข้อง</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    color-scheme: light;
+    --surface-1:#fcfcfb; --page:#f4f4f1; --card:#ffffff;
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
+    --gridline:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a; --series-4:#eda100;
+    --series-5:#e87ba4; --series-6:#008300; --series-7:#4a3aa7; --series-8:#e34948;
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+    --accent-wash: rgba(42,120,214,0.08);
+    --shadow: 0 1px 2px rgba(11,11,11,0.06), 0 4px 16px rgba(11,11,11,0.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --surface-1:#1a1a19; --page:#0d0d0d; --card:#1f1f1e;
+      --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
+      --gridline:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,0.10);
+      --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-4:#c98500;
+      --series-5:#d55181; --series-6:#008300; --series-7:#9085e9; --series-8:#e66767;
+      --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#e66767;
+      --accent-wash: rgba(57,135,229,0.14);
+      --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.35);
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--page); color:var(--text-primary);
+    font-family:"Noto Sans Thai", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  #app{ display:flex; min-height:100vh; }
+
+  /* ---------- left rail ---------- */
+  .rail{
+    width:76px; flex:0 0 76px;
+    background:var(--card); border-right:1px solid var(--border);
+    display:flex; flex-direction:column; align-items:stretch;
+    padding:12px 6px; gap:6px; position:sticky; top:0; height:100vh;
+  }
+  .rail-brand{ text-align:center; font-size:22px; padding:6px 0 12px; }
+  .rail-btn{
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    background:none; border:none; cursor:pointer; color:var(--text-secondary);
+    padding:10px 4px; border-radius:12px; font-family:inherit;
+    font-size:11px; line-height:1.25; text-align:center;
+  }
+  .rail-btn .ic{ font-size:19px; }
+  .rail-btn:hover{ background:var(--accent-wash); }
+  .rail-btn[aria-selected="true"]{ background:var(--accent-wash); color:var(--series-1); font-weight:600; }
+
+  /* ---------- main ---------- */
+  main{ flex:1 1 auto; min-width:0; }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:16px 20px; border-bottom:1px solid var(--border);
+    background:var(--surface-1); position:sticky; top:0; z-index:5;
+  }
+  .topbar h1{ font-size:17px; margin:0; font-weight:700; }
+  .topbar .sub{ font-size:12px; color:var(--text-muted); margin-top:2px; }
+  .refresh-btn{
+    display:flex; align-items:center; gap:6px; background:var(--card);
+    border:1px solid var(--border); color:var(--text-secondary);
+    border-radius:10px; padding:8px 12px; font-size:12.5px; cursor:pointer;
+    font-family:inherit;
+  }
+  .refresh-btn:active{ transform:scale(0.97); }
+  .refresh-btn .spin{ display:inline-block; }
+  .refresh-btn.loading .spin{ animation: spin 0.9s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .content{ padding:16px 20px 40px; max-width:1180px; margin:0 auto; }
+
+  /* ---------- filters ---------- */
+  .filters{
+    display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:12px; margin-bottom:16px; box-shadow:var(--shadow);
+  }
+  .filters .fgroup{ display:flex; flex-direction:column; gap:3px; min-width:132px; flex:1 1 132px; }
+  .filters label{ font-size:10.5px; color:var(--text-muted); font-weight:600; letter-spacing:.02em; }
+  .filters select, .filters input[type="date"]{
+    font-family:inherit; font-size:13px; padding:8px 9px; border-radius:9px;
+    border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);
+    width:100%;
+  }
+  .filters select:focus, .filters input:focus{ outline:2px solid var(--series-1); outline-offset:1px; }
+  .filter-actions{ display:flex; gap:8px; align-items:flex-end; flex:0 0 auto; }
+  .preset-row{ display:flex; gap:6px; flex-wrap:wrap; }
+  .preset-chip{
+    font-family:inherit; font-size:12px; padding:6px 10px; border-radius:999px;
+    border:1px solid var(--border); background:var(--surface-1); color:var(--text-secondary); cursor:pointer;
+  }
+  .preset-chip[aria-pressed="true"]{ background:var(--series-1); color:#fff; border-color:var(--series-1); }
+  .clear-btn{
+    font-family:inherit; font-size:12.5px; padding:8px 12px; border-radius:9px;
+    border:1px solid var(--border); background:var(--surface-1); color:var(--text-secondary); cursor:pointer;
+  }
+  .filter-count{
+    font-size:11.5px; color:var(--series-1); font-weight:600; align-self:center; white-space:nowrap;
+  }
+
+  /* ---------- state banners ---------- */
+  .banner{
+    border-radius:12px; padding:12px 14px; font-size:13px; margin-bottom:14px;
+    display:flex; gap:10px; align-items:flex-start; line-height:1.5;
+  }
+  .banner.error{ background:rgba(208,59,59,0.08); color:var(--critical); border:1px solid rgba(208,59,59,0.25); }
+  .banner.loading{ background:var(--accent-wash); color:var(--series-1); border:1px solid rgba(42,120,214,0.2); }
+  .banner a{ color:inherit; }
+
+  /* ---------- KPI tiles ---------- */
+  .kpi-grid{
+    display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin-bottom:16px;
+  }
+  .kpi{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:14px; box-shadow:var(--shadow);
+  }
+  .kpi .label{ font-size:11.5px; color:var(--text-muted); font-weight:600; }
+  .kpi .value{ font-size:26px; font-weight:700; margin-top:6px; letter-spacing:-0.01em; }
+  .kpi .value .unit{ font-size:13px; font-weight:600; color:var(--text-secondary); margin-left:3px; }
+  .kpi .delta{ font-size:11.5px; margin-top:4px; color:var(--text-muted); }
+
+  /* ---------- charts ---------- */
+  .chart-grid{ display:grid; grid-template-columns: 1.3fr 1fr; gap:12px; margin-bottom:16px; }
+  .chart-card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:14px 14px 8px; box-shadow:var(--shadow); min-width:0;
+  }
+  .chart-card.full{ grid-column:1 / -1; }
+  .chart-card h3{ font-size:13.5px; margin:0 0 2px; font-weight:700; }
+  .chart-card .cap{ font-size:11.5px; color:var(--text-muted); margin-bottom:8px; }
+  .chart-wrap{ position:relative; height:220px; }
+  .chart-wrap.small{ height:200px; }
+  .empty-chart{
+    display:flex; align-items:center; justify-content:center; height:100%;
+    color:var(--text-muted); font-size:12.5px;
+  }
+
+  /* ---------- event list ---------- */
+  .list-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px; }
+  .list-head h3{ font-size:14px; margin:0; }
+  .list-head .cnt{ font-size:12px; color:var(--text-muted); }
+  .ev-list{ display:flex; flex-direction:column; gap:8px; }
+  .ev-card{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:12px 13px; box-shadow:var(--shadow);
+  }
+  .ev-top{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+  .ev-title{ font-size:13.5px; font-weight:700; }
+  .ev-when{ font-size:11.5px; color:var(--text-muted); white-space:nowrap; }
+  .ev-tags{ display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+  .tag{
+    font-size:10.5px; padding:3px 8px; border-radius:999px; background:var(--surface-1);
+    color:var(--text-secondary); border:1px solid var(--border); font-weight:600;
+  }
+  .tag.status-good{ color:var(--good); border-color:rgba(12,163,12,0.3); }
+  .tag.status-bad{ color:var(--critical); border-color:rgba(208,59,59,0.3); }
+  .ev-meta{ font-size:12px; color:var(--text-secondary); margin-top:6px; line-height:1.5; }
+  .ev-cause{ font-size:12px; color:var(--text-primary); margin-top:6px; }
+  .ev-cause b{ color:var(--text-muted); font-weight:600; }
+  .more-btn{
+    font-family:inherit; margin:12px auto 0; display:block; padding:9px 18px;
+    border-radius:10px; border:1px solid var(--border); background:var(--card);
+    color:var(--series-1); font-weight:600; font-size:13px; cursor:pointer;
+  }
+  .empty-state{ text-align:center; color:var(--text-muted); font-size:13px; padding:30px 10px; }
+
+  footer.note{ text-align:center; font-size:11px; color:var(--text-muted); padding:18px 20px 30px; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 860px){
+    .kpi-grid{ grid-template-columns:repeat(2,1fr); }
+    .chart-grid{ grid-template-columns:1fr; }
+    .content{ padding:12px 12px 32px; }
+    .topbar{ padding:12px 14px; }
+  }
+  @media (max-width: 520px){
+    .rail{ width:60px; flex:0 0 60px; padding:10px 4px; }
+    .rail-btn{ font-size:9.5px; padding:8px 2px; }
+    .rail-btn .ic{ font-size:17px; }
+    .rail-brand{ font-size:18px; padding-bottom:8px; }
+    .topbar h1{ font-size:15px; }
+    .filters .fgroup{ min-width:calc(50% - 4px); flex:1 1 calc(50% - 4px); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <nav class="rail" role="tablist" aria-label="เลือกชุดข้อมูล">
+    <div class="rail-brand">⚡</div>
+    <button class="rail-btn" role="tab" data-tab="outage" aria-selected="true">
+      <span class="ic">🔌</span><span>เหตุการณ์<br>ไฟฟ้าขัดข้อง</span>
+    </button>
+    <button class="rail-btn" role="tab" data-tab="oca" aria-selected="false">
+      <span class="ic">📈</span><span>รายงาน<br>OCA</span>
+    </button>
+  </nav>
+
+  <main>
+    <div class="topbar">
+      <div>
+        <h1 id="pageTitle">สรุปเหตุการณ์ไฟฟ้าขัดข้อง</h1>
+        <div class="sub" id="lastUpdated">ยังไม่ได้โหลดข้อมูล</div>
+      </div>
+      <button class="refresh-btn" id="refreshBtn"><span class="spin">↻</span> รีเฟรช</button>
+    </div>
+
+    <div class="content">
+      <div id="banners"></div>
+
+      <div class="filters" id="filters">
+        <div class="fgroup" style="flex:0 0 100%;">
+          <label>ช่วงวันที่</label>
+          <div class="preset-row" id="presetRow">
+            <button class="preset-chip" data-preset="7">7 วันล่าสุด</button>
+            <button class="preset-chip" data-preset="30" aria-pressed="true">30 วันล่าสุด</button>
+            <button class="preset-chip" data-preset="90">90 วันล่าสุด</button>
+            <button class="preset-chip" data-preset="all">ทั้งหมด</button>
+          </div>
+        </div>
+        <div class="fgroup">
+          <label>จากวันที่</label>
+          <input type="date" id="dateFrom">
+        </div>
+        <div class="fgroup">
+          <label>ถึงวันที่</label>
+          <input type="date" id="dateTo">
+        </div>
+        <div class="fgroup" data-field="responsible">
+          <label>กฟฟ. ที่รับผิดชอบ</label>
+          <select id="fResponsible"><option value="">ทั้งหมด</option></select>
+        </div>
+        <div class="fgroup" data-field="workcenter">
+          <label>กฟฟ. จุดรวมงาน</label>
+          <select id="fWorkcenter"><option value="">ทั้งหมด</option></select>
+        </div>
+        <div class="fgroup" data-field="substation">
+          <label>สถานีไฟฟ้า</label>
+          <select id="fSubstation"><option value="">ทั้งหมด</option></select>
+        </div>
+        <div class="fgroup" data-field="circuit">
+          <label>วงจร (รหัสอุปกรณ์)</label>
+          <select id="fCircuit"><option value="">ทั้งหมด</option></select>
+        </div>
+        <div class="filter-actions">
+          <button class="clear-btn" id="clearBtn">ล้างตัวกรอง</button>
+          <span class="filter-count" id="filterCount"></span>
+        </div>
+      </div>
+
+      <div class="kpi-grid" id="kpiGrid"></div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3 id="trendTitle">แนวโน้มจำนวนเหตุการณ์รายวัน</h3>
+          <div class="cap">ตามช่วงวันที่และตัวกรองที่เลือก</div>
+          <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3 id="donutTitle">สัดส่วนตามประเภท</h3>
+          <div class="cap" id="donutCap"></div>
+          <div class="chart-wrap small"><canvas id="donutChart"></canvas></div>
+        </div>
+        <div class="chart-card full">
+          <h3 id="rankTitle">อันดับตาม กฟฟ. ที่รับผิดชอบ</h3>
+          <div class="cap">จำนวนเหตุการณ์ เรียงจากมากไปน้อย</div>
+          <div class="chart-wrap"><canvas id="rankChart"></canvas></div>
+        </div>
+        <div class="chart-card full" id="ocaStatusCardWrap" style="display:none;">
+          <h3>สถานะการคำนวณ OCA ตาม กฟฟ. จุดรวมงาน</h3>
+          <div class="cap">จำนวนเหตุการณ์ในแต่ละจุดรวมงาน แบ่งตามว่าคำนวณ OCA แล้วหรือยัง</div>
+          <div class="chart-wrap"><canvas id="ocaStatusChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="list-head">
+        <h3 id="listTitle">รายการเหตุการณ์</h3>
+        <span class="cnt" id="listCount"></span>
+      </div>
+      <div class="ev-list" id="evList"></div>
+      <button class="more-btn" id="moreBtn" style="display:none;">แสดงเพิ่มเติม</button>
+
+      <footer class="note">ข้อมูลดึงจาก Google Sheets แบบเรียลไทม์ · ระบบสรุปสำหรับผู้บริหาร</footer>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   หมายเหตุสำหรับผู้ดูแล:
+   1) ชีตทั้งสองต้องแชร์แบบ "ทุกคนที่มีลิงก์ - ดูได้" (Anyone with the
+      link - Viewer) ไม่เช่นนั้นหน้านี้จะโหลดข้อมูลไม่ได้ เพราะหน้าเว็บ
+      ที่ขึ้น GitHub Pages ดึงข้อมูลจากฝั่งเบราว์เซอร์ของผู้ใช้เอง (ไม่มี
+      การล็อกอิน Google)
+   2) ฟิลเตอร์ "วงจร" อิงจากคอลัมน์ "รหัสอุปกรณ์" เนื่องจากทั้งสองชีต
+      ไม่มีคอลัมน์ชื่อ "วงจร" แยกต่างหาก — ถ้ามีคอลัมน์วงจรจริงเพิ่มในชีต
+      ทีหลัง แก้ mapping ที่ fields.circuit ด้านล่างได้เลย
+   3) หากหัวคอลัมน์ในชีตจริงสะกด/เว้นวรรคต่างจากที่กำหนดไว้เล็กน้อย ระบบ
+      จะพยายามจับคู่แบบยืดหยุ่นให้อัตโนมัติ (resolveHeaders)
+   ============================================================
+   CONFIG — maps each tab to its Google Sheet + Thai column names.
+   Header text is matched with whitespace/quote-tolerant fuzzy
+   matching (see resolveHeaders) so small formatting differences
+   in the live sheet don't break the mapping.
+   ============================================================ */
+const TABS = {
+  outage: {
+    key: 'outage',
+    sheetId: '1v0S_Ri2k60p-TGUGa7mk2VK3l3Fz-fe0iOqoXuequlo',
+    gid: '0',
+    title: 'สรุปเหตุการณ์ไฟฟ้าขัดข้อง',
+    listTitle: 'รายการเหตุการณ์ไฟฟ้าขัดข้อง',
+    dateHeader: 'วันที่',
+    timeHeader: 'เวลา',
+    fields: {
+      responsible: 'กฟฟ. ที่รับผิดชอบ',
+      workcenter: 'กฟฟ. จุดรวมงาน',
+      substation: 'สถานีไฟฟ้า',
+      circuit: 'รหัสอุปกรณ์',
+      cause: 'สาเหตุ',
+      causeKnown: 'ทราบ/ไม่ทราบสาเหตุ',
+      causeCategory: 'ประเภทสาเหตุ',
+      eventType: 'ประเภทเหตุการณ์',
+      duration: 'ระยะเวลาไฟดับ',
+      affectedArea: 'พื้นที่ผลกระทบ',
+      trtl: 'TR or TL',
+      voltage: 'ระดับแรงดัน',
+      weather: 'อากาศ',
+      operation: 'การทำงาน'
+    },
+    availableFilters: ['responsible', 'workcenter', 'substation', 'circuit'],
+    rankField: 'responsible',
+    rankLabel: 'กฟฟ. ที่รับผิดชอบ',
+    donutField: 'eventType',
+    donutTitle: 'สัดส่วนตามประเภทเหตุการณ์'
+  },
+  oca: {
+    key: 'oca',
+    sheetId: '1fQwyYJIoYMoefpI8aTytvswj6FtugBsVuS3MvBANt6c',
+    gid: '2112585033',
+    title: 'สรุปรายงาน OCA',
+    listTitle: 'รายการเหตุการณ์ OCA',
+    dateHeader: 'วันที่',
+    timeHeader: 'เวลา (น.)',
+    fields: {
+      workcenter: 'กฟฟ.จุดรวมงาน',
+      circuit: 'รหัสอุปกรณ์',
+      cause: 'สาเหตุ',
+      found: 'พบ/ไม่พบ',
+      causeCategory: 'ประเภทสาเหตุ',
+      weather: 'สภาพอากาศ',
+      operation: 'การทำงาน',
+      graphStatus: 'กราฟ OCA',
+      calcStatus: 'คิด OCA'
+    },
+    availableFilters: ['workcenter', 'circuit'],
+    rankField: 'workcenter',
+    rankLabel: 'กฟฟ. จุดรวมงาน',
+    donutField: 'found',
+    donutTitle: 'สัดส่วนพบ/ไม่พบสาเหตุ'
+  }
+};
+const FIELD_TO_INPUT = { responsible: 'fResponsible', workcenter: 'fWorkcenter', substation: 'fSubstation', circuit: 'fCircuit' };
+
+Object.keys(TABS).forEach(k => {
+  TABS[k].filters = { preset: 'all', from: null, to: null, responsible: '', workcenter: '', substation: '', circuit: '' };
+  TABS[k].state = { cols: null, rows: [], loading: false, loaded: false, error: null, lastFetch: null, listLimit: 20, fieldCols: null, dateCol: null, timeCol: null };
+});
+let activeTab = 'outage';
+const chartInstances = {};
+
+/* ---------------- data loading (JSONP via Google Visualization API) ---------------- */
+function loadSheetData(tab) {
+  const cfg = TABS[tab];
+  if (cfg.state.loading) return;
+  cfg.state.loading = true;
+  cfg.state.error = null;
+  if (activeTab === tab) renderAll();
+
+  const cbName = 'gvizCB_' + tab + '_' + Date.now();
+  let done = false;
+  const timeoutId = setTimeout(() => {
+    if (!done) { done = true; cleanup(); handleError(tab, new Error('หมดเวลาเชื่อมต่อ Google Sheets')); }
+  }, 15000);
+
+  function cleanup() {
+    clearTimeout(timeoutId);
+    try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+    const s = document.getElementById(cbName);
+    if (s) s.remove();
+  }
+
+  window[cbName] = function (resp) {
+    if (done) return;
+    done = true;
+    cleanup();
+    try {
+      if (!resp || !resp.table) throw new Error('รูปแบบข้อมูลไม่ถูกต้อง');
+      const cols = resp.table.cols.map((c, i) => (c.label && String(c.label).trim()) ? String(c.label).trim() : ('col' + i));
+      const rows = resp.table.rows.map(r => {
+        const obj = {};
+        cols.forEach((h, i) => { obj[h] = (r.c && r.c[i]) || null; });
+        return obj;
+      });
+      cfg.state.cols = cols;
+      cfg.state.rows = rows;
+      cfg.state.loading = false;
+      cfg.state.loaded = true;
+      cfg.state.error = null;
+      cfg.state.lastFetch = new Date();
+      resolveHeaders(tab);
+      populateFilterOptions(tab);
+      if (activeTab === tab) renderAll();
+    } catch (e) {
+      handleError(tab, e);
+    }
+  };
+
+  const script = document.createElement('script');
+  script.id = cbName;
+  script.src = 'https://docs.google.com/spreadsheets/d/' + cfg.sheetId + '/gviz/tq?gid=' + cfg.gid + '&headers=1&tqx=out:json;responseHandler:' + cbName;
+  script.onerror = function () {
+    if (!done) { done = true; cleanup(); handleError(tab, new Error('ไม่สามารถเชื่อมต่อ Google Sheets ได้ (ตรวจสอบสิทธิ์การแชร์แบบ "ทุกคนที่มีลิงก์ดูได้")')); }
+  };
+  document.head.appendChild(script);
+}
+
+function handleError(tab, err) {
+  TABS[tab].state.loading = false;
+  TABS[tab].state.error = (err && err.message) ? err.message : String(err);
+  if (activeTab === tab) renderAll();
+}
+
+/* ---------------- header resolution (whitespace/quote tolerant) ---------------- */
+function normalizeHeader(s) { return (s || '').toString().replace(/[\s"'“”‘’.]/g, '').trim(); }
+function resolveHeaders(tab) {
+  const cfg = TABS[tab];
+  const cols = cfg.state.cols || [];
+  const normCols = cols.map(c => ({ orig: c, norm: normalizeHeader(c) }));
+  function findMatch(target) {
+    const nt = normalizeHeader(target);
+    if (!nt) return null;
+    let hit = normCols.find(c => c.norm === nt);
+    if (hit) return hit.orig;
+    hit = normCols.find(c => c.norm.indexOf(nt) !== -1 || nt.indexOf(c.norm) !== -1);
+    return hit ? hit.orig : null;
+  }
+  cfg.state.dateCol = findMatch(cfg.dateHeader);
+  cfg.state.timeCol = findMatch(cfg.timeHeader);
+  const fieldCols = {};
+  Object.keys(cfg.fields).forEach(k => { fieldCols[k] = findMatch(cfg.fields[k]); });
+  cfg.state.fieldCols = fieldCols;
+}
+function F(tab, row, key) { const col = TABS[tab].state.fieldCols ? TABS[tab].state.fieldCols[key] : null; return col ? row[col] : null; }
+function D(tab, row) { const col = TABS[tab].state.dateCol; return col ? row[col] : null; }
+function Tm(tab, row) { const col = TABS[tab].state.timeCol; return col ? row[col] : null; }
+function effectiveAvailable(tab) {
+  const cfg = TABS[tab]; const fc = cfg.state.fieldCols || {};
+  return cfg.availableFilters.filter(k => fc[k]);
+}
+
+/* ---------------- cell value helpers ---------------- */
+function cellText(cell) {
+  if (!cell) return '';
+  if (cell.f !== undefined && cell.f !== null && cell.f !== '') return String(cell.f);
+  if (cell.v === undefined || cell.v === null) return '';
+  if (Array.isArray(cell.v)) return cell.v.join(':');
+  return String(cell.v);
+}
+function cellNumber(cell) {
+  if (!cell) return null;
+  if (typeof cell.v === 'number') return cell.v;
+  const s = cellText(cell).replace(/,/g, '').trim();
+  if (!s) return null;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+function cellDate(cell) {
+  if (!cell) return null;
+  if (cell.v && typeof cell.v === 'string') {
+    const m = /^Date\((\d+),(\d+),(\d+)/.exec(cell.v);
+    if (m) return new Date(+m[1], +m[2], +m[3]);
+  }
+  const s = cellText(cell).trim();
+  if (!s) return null;
+  const m2 = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (m2) {
+    let a = +m2[1], b = +m2[2], y = +m2[3];
+    if (y > 2400) y -= 543; // Buddhist year safety net
+    let day, month;
+    if (a > 12) { day = a; month = b; } else if (b > 12) { day = b; month = a; } else { day = a; month = b; } // default D/M/Y
+    return new Date(y, month - 1, day);
+  }
+  return null;
+}
+function cellDurationMinutes(cell) {
+  if (!cell) return 0;
+  if (Array.isArray(cell.v)) { const h = cell.v[0] || 0, m = cell.v[1] || 0, s = cell.v[2] || 0; return h * 60 + m + s / 60; }
+  const text = cellText(cell).trim();
+  const mm = /^(\d{1,3}):(\d{2})(?::(\d{2}))?$/.exec(text);
+  if (mm) return (+mm[1]) * 60 + (+mm[2]) + (mm[3] ? (+mm[3]) / 60 : 0);
+  const n = cellNumber(cell);
+  if (n === null) return 0;
+  if (n > 0 && n < 1) return n * 24 * 60; // sheets duration serial (fraction of a day)
+  return n;
+}
+function formatMinutes(totalMin) {
+  totalMin = Math.round(totalMin);
+  const h = Math.floor(totalMin / 60), m = totalMin % 60;
+  if (h > 0) return h.toLocaleString('th-TH') + ' ชม. ' + m + ' นาที';
+  return m.toLocaleString('th-TH') + ' นาที';
+}
+function toDateInputValue(d) { const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0'); return y + '-' + m + '-' + day; }
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function hexToRgba(hex, alpha) {
+  hex = (hex || '').replace('#', '').trim();
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  if (hex.length !== 6) return 'rgba(42,120,214,' + alpha + ')';
+  const r = parseInt(hex.substring(0, 2), 16), g = parseInt(hex.substring(2, 4), 16), b = parseInt(hex.substring(4, 6), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
+/* ---------------- filtering ---------------- */
+function applyPreset(tab, preset) {
+  const cfg = TABS[tab];
+  cfg.filters.preset = preset;
+  if (preset === 'all') { cfg.filters.from = null; cfg.filters.to = null; }
+  else {
+    const days = parseInt(preset, 10);
+    const to = new Date(); to.setHours(23, 59, 59, 999);
+    const from = new Date(); from.setDate(from.getDate() - days + 1); from.setHours(0, 0, 0, 0);
+    cfg.filters.from = from; cfg.filters.to = to;
+  }
+}
+function getFilteredRows(tab) {
+  const cfg = TABS[tab]; const st = cfg.state; const f = cfg.filters;
+  if (!st.rows) return [];
+  const avail = effectiveAvailable(tab);
+  return st.rows.filter(row => {
+    const d = cellDate(D(tab, row));
+    if ((f.from || f.to) && !d) return false;
+    if (f.from && d && d < f.from) return false;
+    if (f.to && d && d > f.to) return false;
+    for (const key of avail) {
+      const val = f[key];
+      if (val) { if (cellText(F(tab, row, key)).trim() !== val) return false; }
+    }
+    return true;
+  });
+}
+
+/* ---------------- KPIs ---------------- */
+function computeKPIs(tab, rows) {
+  const total = rows.length;
+  if (tab === 'outage') {
+    let totalDur = 0; rows.forEach(r => totalDur += cellDurationMinutes(F(tab, r, 'duration')));
+    let knownCount = 0, knownTotal = 0;
+    rows.forEach(r => {
+      const t = cellText(F(tab, r, 'causeKnown')).trim();
+      if (t) { knownTotal++; if (!/ไม่ทราบ|✗|false|no/i.test(t)) knownCount++; }
+    });
+    const causeRate = knownTotal ? Math.round(knownCount / knownTotal * 100) : null;
+    let majorCount = 0;
+    rows.forEach(r => { const t = cellText(F(tab, r, 'eventType')).trim(); if (/major|ใหญ่|รุนแรง/i.test(t)) majorCount++; });
+    return [
+      { label: 'จำนวนเหตุการณ์ทั้งหมด', value: total.toLocaleString('th-TH'), unit: 'ครั้ง' },
+      { label: 'รวมเวลาไฟดับ', value: formatMinutes(totalDur), unit: '' },
+      { label: 'เหตุการณ์ระดับ Major', value: majorCount.toLocaleString('th-TH'), unit: 'ครั้ง' },
+      { label: 'อัตราทราบสาเหตุ', value: causeRate === null ? '—' : causeRate, unit: causeRate === null ? '' : '%' }
+    ];
+  } else {
+    let foundCount = 0, foundTotal = 0;
+    rows.forEach(r => { const t = cellText(F(tab, r, 'found')).trim(); if (t) { foundTotal++; if (!/ไม่พบ/i.test(t)) foundCount++; } });
+    const foundRate = foundTotal ? Math.round(foundCount / foundTotal * 100) : null;
+    const wcSet = new Set(rows.map(r => cellText(F(tab, r, 'workcenter')).trim()).filter(Boolean));
+    return [
+      { label: 'จำนวนเหตุการณ์ OCA', value: total.toLocaleString('th-TH'), unit: 'ครั้ง' },
+      { label: 'อัตราพบสาเหตุ', value: foundRate === null ? '—' : foundRate, unit: foundRate === null ? '' : '%' },
+      { label: 'จุดรวมงานที่เกี่ยวข้อง', value: wcSet.size.toLocaleString('th-TH'), unit: 'แห่ง' },
+      { label: 'ยังไม่พบสาเหตุ', value: (foundTotal - foundCount).toLocaleString('th-TH'), unit: 'ครั้ง' }
+    ];
+  }
+}
+function renderKPIs(tab, rows) {
+  const kpis = computeKPIs(tab, rows);
+  const grid = document.getElementById('kpiGrid');
+  while (grid.firstChild) grid.removeChild(grid.firstChild);
+  kpis.forEach(k => {
+    const card = document.createElement('div'); card.className = 'kpi';
+    const lab = document.createElement('div'); lab.className = 'label'; lab.textContent = k.label;
+    const val = document.createElement('div'); val.className = 'value';
+    val.appendChild(document.createTextNode(String(k.value)));
+    if (k.unit) { const u = document.createElement('span'); u.className = 'unit'; u.textContent = k.unit; val.appendChild(u); }
+    card.appendChild(lab); card.appendChild(val);
+    grid.appendChild(card);
+  });
+}
+
+/* ---------------- charts ---------------- */
+function destroyChart(id) { if (chartInstances[id]) { chartInstances[id].destroy(); chartInstances[id] = null; } }
+function setChartEmpty(canvasId, wrapEl, isEmpty, msg) {
+  let empty = wrapEl.querySelector('.empty-chart');
+  const canvas = document.getElementById(canvasId);
+  if (isEmpty) {
+    canvas.style.display = 'none';
+    if (!empty) { empty = document.createElement('div'); empty.className = 'empty-chart'; wrapEl.appendChild(empty); }
+    empty.textContent = msg || 'ไม่มีข้อมูลตามเงื่อนไขที่เลือก';
+  } else {
+    canvas.style.display = '';
+    if (empty) empty.remove();
+  }
+}
+const FONT = { family: "'Noto Sans Thai', sans-serif", size: 10.5 };
+const PALETTE_VARS = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7', '--series-8'];
+
+function chartLibReady(canvasId, wrapEl) {
+  if (typeof Chart !== 'undefined') return true;
+  setChartEmpty(canvasId, wrapEl, true, 'ไม่สามารถโหลดไลบรารีกราฟได้ (ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต)');
+  return false;
+}
+function renderTrendChart(tab, rows) {
+  const canvas = document.getElementById('trendChart');
+  const wrap = canvas.parentElement;
+  if (!chartLibReady('trendChart', wrap)) return;
+  const dated = rows.map(r => cellDate(D(tab, r))).filter(Boolean);
+  if (dated.length === 0) { destroyChart('trend'); setChartEmpty('trendChart', wrap, true); return; }
+  setChartEmpty('trendChart', wrap, false);
+  const counts = new Map();
+  dated.forEach(d => { const key = toDateInputValue(d); counts.set(key, (counts.get(key) || 0) + 1); });
+  let keys = Array.from(counts.keys()).sort();
+  let labels, data;
+  if (keys.length > 45) {
+    const wk = new Map();
+    keys.forEach(k => {
+      const dt = new Date(k + 'T00:00:00');
+      const monday = new Date(dt); monday.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+      const wkKey = monday.toLocaleDateString('th-TH', { day: '2-digit', month: 'short' });
+      wk.set(wkKey, (wk.get(wkKey) || 0) + counts.get(k));
+    });
+    labels = Array.from(wk.keys()); data = labels.map(l => wk.get(l));
+  } else {
+    labels = keys.map(k => new Date(k + 'T00:00:00').toLocaleDateString('th-TH', { day: '2-digit', month: 'short' }));
+    data = keys.map(k => counts.get(k));
+  }
+  destroyChart('trend');
+  chartInstances.trend = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets: [{ data, borderColor: cssVar('--series-1'), backgroundColor: hexToRgba(cssVar('--series-1'), 0.14), fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: cssVar('--text-muted'), maxRotation: 0, autoSkip: true, font: FONT } },
+        y: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } }
+      }
+    }
+  });
+}
+
+function renderDonutChart(tab, rows) {
+  const cfg = TABS[tab];
+  document.getElementById('donutTitle').textContent = cfg.donutTitle;
+  const canvas = document.getElementById('donutChart');
+  const wrap = canvas.parentElement;
+  if (!chartLibReady('donutChart', wrap)) return;
+  if (rows.length === 0) { destroyChart('donut'); setChartEmpty('donutChart', wrap, true); return; }
+  const counts = new Map();
+  rows.forEach(r => { let v = cellText(F(tab, r, cfg.donutField)).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
+  let entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  const maxSlices = 6;
+  if (entries.length > maxSlices) {
+    const top = entries.slice(0, maxSlices - 1);
+    const restSum = entries.slice(maxSlices - 1).reduce((s, e) => s + e[1], 0);
+    entries = top.concat([['อื่นๆ', restSum]]);
+  }
+  setChartEmpty('donutChart', wrap, false);
+  const colors = entries.map((_, i) => cssVar(PALETTE_VARS[i % PALETTE_VARS.length]));
+  destroyChart('donut');
+  chartInstances.donut = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: colors, borderColor: cssVar('--card'), borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10 } },
+        tooltip: { callbacks: { label: (item) => { const total = item.dataset.data.reduce((a, b) => a + b, 0); const pct = total ? Math.round(item.parsed / total * 100) : 0; return ' ' + item.label + ': ' + item.formattedValue + ' (' + pct + '%)'; } } }
+      }
+    }
+  });
+}
+
+function renderRankChart(tab, rows) {
+  const cfg = TABS[tab];
+  document.getElementById('rankTitle').textContent = 'อันดับตาม ' + cfg.rankLabel;
+  const canvas = document.getElementById('rankChart');
+  const wrap = canvas.parentElement;
+  if (!chartLibReady('rankChart', wrap)) return;
+  if (rows.length === 0) { destroyChart('rank'); setChartEmpty('rankChart', wrap, true); return; }
+  const counts = new Map();
+  rows.forEach(r => { let v = cellText(F(tab, r, cfg.rankField)).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
+  let entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  setChartEmpty('rankChart', wrap, false);
+  destroyChart('rank');
+  chartInstances.rank = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-1'), borderRadius: 4, maxBarThickness: 26 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
+      scales: {
+        x: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
+        y: { grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } } }
+      }
+    }
+  });
+}
+
+function classifyCalcStatus(text) {
+  return /ยัง/.test(text || '') ? 'pending' : 'done';
+}
+function renderOcaStatusChart(tab, rows) {
+  const canvas = document.getElementById('ocaStatusChart');
+  const wrap = canvas.parentElement;
+  if (!chartLibReady('ocaStatusChart', wrap)) return;
+  if (rows.length === 0) { destroyChart('ocaStatus'); setChartEmpty('ocaStatusChart', wrap, true); return; }
+  const map = new Map(); // wc -> {done, pending}
+  rows.forEach(r => {
+    let wc = cellText(F(tab, r, 'workcenter')).trim(); if (!wc) wc = 'ไม่ระบุ';
+    const status = classifyCalcStatus(cellText(F(tab, r, 'calcStatus')));
+    if (!map.has(wc)) map.set(wc, { done: 0, pending: 0 });
+    map.get(wc)[status]++;
+  });
+  let entries = Array.from(map.entries());
+  entries.sort((a, b) => (b[1].done + b[1].pending) - (a[1].done + a[1].pending));
+  entries = entries.slice(0, 8);
+  setChartEmpty('ocaStatusChart', wrap, false);
+  destroyChart('ocaStatus');
+  chartInstances.ocaStatus = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: entries.map(e => e[0]),
+      datasets: [
+        { label: 'คำนวณ OCA แล้ว', data: entries.map(e => e[1].done), backgroundColor: cssVar('--good'), stack: 's' },
+        { label: 'ยังไม่ได้คำนวณ', data: entries.map(e => e[1].pending), backgroundColor: cssVar('--critical'), stack: 's' }
+      ]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10 } },
+        tooltip: { callbacks: { label: (item) => ' ' + item.dataset.label + ': ' + item.formattedValue + ' ครั้ง' } }
+      },
+      scales: {
+        x: { stacked: true, beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
+        y: { stacked: true, grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } } }
+      }
+    }
+  });
+}
+
+/* ---------------- event list ---------------- */
+function buildEventCard(tab, row) {
+  const card = document.createElement('div'); card.className = 'ev-card';
+  const top = document.createElement('div'); top.className = 'ev-top';
+  const title = document.createElement('div'); title.className = 'ev-title';
+  const stationText = tab === 'outage' ? cellText(F(tab, row, 'substation')) : '';
+  const circuitText = cellText(F(tab, row, 'circuit'));
+  title.textContent = stationText ? (stationText + (circuitText ? ' · ' + circuitText : '')) : (circuitText || 'ไม่ระบุจุดเกิดเหตุ');
+  top.appendChild(title);
+  const when = document.createElement('div'); when.className = 'ev-when';
+  const d = cellDate(D(tab, row));
+  const timeText = cellText(Tm(tab, row));
+  when.textContent = (d ? d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : cellText(D(tab, row))) + (timeText ? ' · ' + timeText : '');
+  top.appendChild(when);
+  card.appendChild(top);
+
+  const tags = document.createElement('div'); tags.className = 'ev-tags';
+  function addTag(text, cls) { if (!text) return; const t = document.createElement('span'); t.className = 'tag' + (cls ? (' ' + cls) : ''); t.textContent = text; tags.appendChild(t); }
+
+  if (tab === 'outage') {
+    const etype = cellText(F(tab, row, 'eventType')); if (etype) addTag(etype, /major|ใหญ่|รุนแรง/i.test(etype) ? 'status-bad' : '');
+    const trtl = cellText(F(tab, row, 'trtl')); addTag(trtl);
+    const known = cellText(F(tab, row, 'causeKnown'));
+    if (known) { const bad = /ไม่ทราบ|✗|false|no/i.test(known); addTag(bad ? 'ไม่ทราบสาเหตุ' : 'ทราบสาเหตุ', bad ? 'status-bad' : 'status-good'); }
+    addTag(cellText(F(tab, row, 'weather')));
+  } else {
+    const found = cellText(F(tab, row, 'found'));
+    if (found) { const bad = /ไม่พบ/i.test(found); addTag(found, bad ? 'status-bad' : 'status-good'); }
+    addTag(cellText(F(tab, row, 'causeCategory')));
+    addTag(cellText(F(tab, row, 'weather')));
+  }
+  if (tags.childNodes.length) card.appendChild(tags);
+
+  const meta = document.createElement('div'); meta.className = 'ev-meta';
+  const metaParts = [];
+  if (tab === 'outage') {
+    const resp = cellText(F(tab, row, 'responsible')); const wc = cellText(F(tab, row, 'workcenter'));
+    if (resp) metaParts.push('กฟฟ.ที่รับผิดชอบ: ' + resp);
+    if (wc && wc !== resp) metaParts.push('จุดรวมงาน: ' + wc);
+    const durMin = cellDurationMinutes(F(tab, row, 'duration'));
+    if (durMin) metaParts.push('ไฟดับ: ' + formatMinutes(durMin));
+    const area = cellText(F(tab, row, 'affectedArea')); if (area) metaParts.push('พื้นที่ผลกระทบ: ' + area);
+  } else {
+    const wc = cellText(F(tab, row, 'workcenter')); if (wc) metaParts.push('จุดรวมงาน: ' + wc);
+  }
+  if (metaParts.length) { meta.textContent = metaParts.join(' · '); card.appendChild(meta); }
+
+  const cause = cellText(F(tab, row, 'cause'));
+  if (cause) { const c = document.createElement('div'); c.className = 'ev-cause'; const b = document.createElement('b'); b.textContent = 'สาเหตุ: '; c.appendChild(b); c.appendChild(document.createTextNode(cause)); card.appendChild(c); }
+  return card;
+}
+function renderList(tab, rows) {
+  const cfg = TABS[tab];
+  const listEl = document.getElementById('evList');
+  while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+  document.getElementById('listCount').textContent = rows.length ? (rows.length.toLocaleString('th-TH') + ' รายการ') : '';
+  if (rows.length === 0) {
+    const d = document.createElement('div'); d.className = 'empty-state'; d.textContent = 'ไม่พบเหตุการณ์ตามเงื่อนไขที่เลือก';
+    listEl.appendChild(d);
+    document.getElementById('moreBtn').style.display = 'none';
+    return;
+  }
+  const sorted = rows.slice().sort((a, b) => {
+    const da = cellDate(D(tab, a)), db = cellDate(D(tab, b));
+    if (da && db) return db - da;
+    if (da) return -1; if (db) return 1; return 0;
+  });
+  const limit = cfg.state.listLimit || 20;
+  sorted.slice(0, limit).forEach(row => listEl.appendChild(buildEventCard(tab, row)));
+  document.getElementById('moreBtn').style.display = sorted.length > limit ? '' : 'none';
+}
+
+/* ---------------- filter controls ---------------- */
+function updateFilterVisibility(tab) {
+  const avail = effectiveAvailable(tab);
+  document.querySelectorAll('.filters [data-field]').forEach(el => {
+    const key = el.getAttribute('data-field');
+    el.style.display = avail.includes(key) ? '' : 'none';
+  });
+}
+function populateFilterOptions(tab) {
+  const cfg = TABS[tab];
+  effectiveAvailable(tab).forEach(key => {
+    const col = cfg.state.fieldCols[key];
+    const set = new Set();
+    cfg.state.rows.forEach(r => { const t = cellText(r[col]).trim(); if (t) set.add(t); });
+    const values = Array.from(set).sort((a, b) => a.localeCompare(b, 'th'));
+    const sel = document.getElementById(FIELD_TO_INPUT[key]);
+    if (!sel) return;
+    const current = sel.value;
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    const optAll = document.createElement('option'); optAll.value = ''; optAll.textContent = 'ทั้งหมด'; sel.appendChild(optAll);
+    values.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+    if (values.includes(current)) sel.value = current;
+  });
+}
+function setSelectValue(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
+function syncFilterControlsFromState(tab) {
+  const f = TABS[tab].filters;
+  document.getElementById('dateFrom').value = f.from ? toDateInputValue(f.from) : '';
+  document.getElementById('dateTo').value = f.to ? toDateInputValue(f.to) : '';
+  Object.keys(FIELD_TO_INPUT).forEach(key => setSelectValue(FIELD_TO_INPUT[key], f[key] || ''));
+  document.querySelectorAll('.preset-chip').forEach(btn => btn.setAttribute('aria-pressed', btn.dataset.preset === f.preset ? 'true' : 'false'));
+}
+function updateFilterCount(tab) {
+  const f = TABS[tab].filters; let n = 0;
+  if (f.preset !== 'all') n++;
+  effectiveAvailable(tab).forEach(k => { if (f[k]) n++; });
+  document.getElementById('filterCount').textContent = n ? ('ใช้ตัวกรอง ' + n + ' รายการ') : '';
+}
+function updateRefreshBtn() {
+  const btn = document.getElementById('refreshBtn');
+  if (TABS[activeTab].state.loading) btn.classList.add('loading'); else btn.classList.remove('loading');
+}
+
+/* ---------------- banners & top-level render ---------------- */
+function renderBanners() {
+  const cfg = TABS[activeTab];
+  const el = document.getElementById('banners');
+  while (el.firstChild) el.removeChild(el.firstChild);
+  if (cfg.state.loading) {
+    const b = document.createElement('div'); b.className = 'banner loading'; b.textContent = 'กำลังโหลดข้อมูลจาก Google Sheets...';
+    el.appendChild(b);
+  } else if (cfg.state.error) {
+    const b = document.createElement('div'); b.className = 'banner error';
+    const span = document.createElement('span'); span.textContent = 'โหลดข้อมูลไม่สำเร็จ: ' + cfg.state.error + ' — ตรวจสอบว่าชีตแชร์แบบ "ทุกคนที่มีลิงก์ดูได้" แล้ว';
+    b.appendChild(span);
+    const retry = document.createElement('button'); retry.className = 'refresh-btn'; retry.style.marginLeft = '4px'; retry.textContent = 'ลองใหม่';
+    retry.addEventListener('click', () => loadSheetData(activeTab));
+    b.appendChild(retry);
+    el.appendChild(b);
+  }
+  updateRefreshBtn();
+}
+function renderEmptyPlaceholders() {
+  const grid = document.getElementById('kpiGrid'); while (grid.firstChild) grid.removeChild(grid.firstChild);
+  ['trendChart', 'donutChart', 'rankChart'].forEach(id => {
+    const wrap = document.getElementById(id).parentElement;
+    setChartEmpty(id, wrap, true, TABS[activeTab].state.loading ? 'กำลังโหลด...' : 'ยังไม่มีข้อมูล');
+  });
+  document.getElementById('ocaStatusCardWrap').style.display = (activeTab === 'oca') ? '' : 'none';
+  if (activeTab === 'oca') {
+    const wrap = document.getElementById('ocaStatusChart').parentElement;
+    setChartEmpty('ocaStatusChart', wrap, true, TABS[activeTab].state.loading ? 'กำลังโหลด...' : 'ยังไม่มีข้อมูล');
+  }
+  const listEl = document.getElementById('evList'); while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+  document.getElementById('listCount').textContent = '';
+  document.getElementById('moreBtn').style.display = 'none';
+}
+function renderAll() {
+  const tab = activeTab, cfg = TABS[tab];
+  updateFilterVisibility(tab);
+  syncFilterControlsFromState(tab);
+  document.getElementById('pageTitle').textContent = cfg.title;
+  document.getElementById('listTitle').textContent = cfg.listTitle;
+  document.getElementById('lastUpdated').textContent = cfg.state.lastFetch
+    ? ('อัปเดตล่าสุด ' + cfg.state.lastFetch.toLocaleTimeString('th-TH'))
+    : (cfg.state.loading ? 'กำลังโหลดข้อมูล...' : 'ยังไม่ได้โหลดข้อมูล');
+  renderBanners();
+  if (!cfg.state.loaded) { renderEmptyPlaceholders(); return; }
+  const rows = getFilteredRows(tab);
+  renderKPIs(tab, rows);
+  try { renderTrendChart(tab, rows); } catch (e) { console.error('trend chart', e); }
+  try { renderDonutChart(tab, rows); } catch (e) { console.error('donut chart', e); }
+  try { renderRankChart(tab, rows); } catch (e) { console.error('rank chart', e); }
+  const statusWrap = document.getElementById('ocaStatusCardWrap');
+  const canCalcStatus = tab === 'oca' && cfg.state.fieldCols && cfg.state.fieldCols.calcStatus;
+  statusWrap.style.display = canCalcStatus ? '' : 'none';
+  if (canCalcStatus) { try { renderOcaStatusChart(tab, rows); } catch (e) { console.error('oca status chart', e); } }
+  renderList(tab, rows);
+  updateFilterCount(tab);
+}
+
+/* ---------------- wire up events ---------------- */
+document.querySelectorAll('.rail-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    if (tab === activeTab) return;
+    activeTab = tab;
+    document.querySelectorAll('.rail-btn').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false'));
+    if (!TABS[tab].state.loaded && !TABS[tab].state.loading) loadSheetData(tab);
+    renderAll();
+  });
+});
+document.getElementById('refreshBtn').addEventListener('click', () => loadSheetData(activeTab));
+document.querySelectorAll('.preset-chip').forEach(btn => {
+  btn.addEventListener('click', () => { applyPreset(activeTab, btn.dataset.preset); renderAll(); });
+});
+document.getElementById('dateFrom').addEventListener('change', (e) => {
+  const cfg = TABS[activeTab]; cfg.filters.preset = null;
+  cfg.filters.from = e.target.value ? new Date(e.target.value + 'T00:00:00') : null;
+  renderAll();
+});
+document.getElementById('dateTo').addEventListener('change', (e) => {
+  const cfg = TABS[activeTab]; cfg.filters.preset = null;
+  cfg.filters.to = e.target.value ? new Date(e.target.value + 'T23:59:59') : null;
+  renderAll();
+});
+Object.keys(FIELD_TO_INPUT).forEach(key => {
+  document.getElementById(FIELD_TO_INPUT[key]).addEventListener('change', (e) => {
+    TABS[activeTab].filters[key] = e.target.value;
+    renderAll();
+  });
+});
+document.getElementById('clearBtn').addEventListener('click', () => {
+  const cfg = TABS[activeTab];
+  cfg.filters = { preset: 'all', from: null, to: null, responsible: '', workcenter: '', substation: '', circuit: '' };
+  cfg.state.listLimit = 20;
+  renderAll();
+});
+document.getElementById('moreBtn').addEventListener('click', () => {
+  TABS[activeTab].state.listLimit = (TABS[activeTab].state.listLimit || 20) + 20;
+  renderAll();
+});
+
+/* ---------------- init ---------------- */
+updateFilterVisibility(activeTab);
+loadSheetData('outage');
+renderAll();
+</script>
+</body>
+</html>
