@@ -245,8 +245,10 @@
         <div class="fgroup" style="flex:0 0 100%;">
           <label>ช่วงวันที่</label>
           <div class="preset-row" id="presetRow">
+            <button class="preset-chip" data-preset="today" aria-pressed="true">วันนี้</button>
+            <button class="preset-chip" data-preset="yesterday">เมื่อวาน</button>
             <button class="preset-chip" data-preset="7">7 วันล่าสุด</button>
-            <button class="preset-chip" data-preset="30" aria-pressed="true">30 วันล่าสุด</button>
+            <button class="preset-chip" data-preset="30">30 วันล่าสุด</button>
             <button class="preset-chip" data-preset="90">90 วันล่าสุด</button>
             <button class="preset-chip" data-preset="all">ทั้งหมด</button>
           </div>
@@ -259,13 +261,24 @@
           <label>ถึงวันที่</label>
           <input type="date" id="dateTo">
         </div>
-        <div class="fgroup" data-field="responsible">
-          <label>กฟฟ. ที่รับผิดชอบ</label>
-          <select id="fResponsible"><option value="">ทั้งหมด</option></select>
+        <div class="fgroup" style="flex:0 0 auto; min-width:0;">
+          <label>&nbsp;</label>
+          <div style="display:flex; gap:4px;">
+            <button class="clear-btn" id="prevDayBtn" type="button" title="วันก่อนหน้า">◀ วันก่อน</button>
+            <button class="clear-btn" id="nextDayBtn" type="button" title="วันถัดไป">วันถัดไป ▶</button>
+          </div>
+        </div>
+        <div class="fgroup" data-field="province">
+          <label>จังหวัด</label>
+          <select id="fProvince"><option value="">ทั้งหมด</option></select>
         </div>
         <div class="fgroup" data-field="workcenter">
           <label>กฟฟ. จุดรวมงาน</label>
           <select id="fWorkcenter"><option value="">ทั้งหมด</option></select>
+        </div>
+        <div class="fgroup" data-field="responsible">
+          <label>กฟฟ. ที่รับผิดชอบ</label>
+          <select id="fResponsible"><option value="">ทั้งหมด</option></select>
         </div>
         <div class="fgroup" data-field="substation">
           <label>สถานีไฟฟ้า</label>
@@ -275,15 +288,46 @@
           <label>วงจร (รหัสอุปกรณ์)</label>
           <select id="fCircuit"><option value="">ทั้งหมด</option></select>
         </div>
+        <div class="fgroup" data-field="pendingOnly" style="display:none; min-width:auto;">
+          <label>&nbsp;</label>
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:var(--text-secondary); cursor:pointer; padding:8px 2px;">
+            <input type="checkbox" id="fPendingOnly"> เฉพาะที่ยังไม่ได้ทำ OCA
+          </label>
+        </div>
         <div class="filter-actions">
           <button class="clear-btn" id="clearBtn">ล้างตัวกรอง</button>
           <span class="filter-count" id="filterCount"></span>
         </div>
       </div>
 
+      <div id="dayLabel" style="font-size:13px; color:var(--text-secondary); font-weight:600; margin:-8px 0 14px;"></div>
+
       <div class="kpi-grid" id="kpiGrid"></div>
 
-      <div class="chart-grid">
+      <div class="chart-grid" id="outageChartsGrid" style="display:none;">
+        <div class="chart-card">
+          <h3>ประเภทอุปกรณ์ป้องกัน</h3>
+          <div class="cap">จำนวนเหตุการณ์แยกตามประเภทอุปกรณ์</div>
+          <div class="chart-wrap"><canvas id="deviceTypeChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>การทำงานของอุปกรณ์ป้องกัน</h3>
+          <div class="cap">สัดส่วนตามลักษณะการทำงาน</div>
+          <div class="chart-wrap small"><canvas id="operationChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>ทราบสาเหตุ/ไม่ทราบสาเหตุ</h3>
+          <div class="cap">สัดส่วนเหตุการณ์ที่หาสาเหตุพบแล้ว</div>
+          <div class="chart-wrap small"><canvas id="causeKnownChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>สาเหตุของไฟฟ้าขัดข้อง</h3>
+          <div class="cap">จำนวนเหตุการณ์แยกตามสาเหตุ</div>
+          <div class="chart-wrap"><canvas id="causeCategoryChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-grid" id="ocaChartsGrid">
         <div class="chart-card">
           <h3 id="trendTitle">แนวโน้มจำนวนเหตุการณ์รายวัน</h3>
           <div class="cap">ตามช่วงวันที่และตัวกรองที่เลือก</div>
@@ -359,9 +403,10 @@ const TABS = {
       trtl: 'TR or TL',
       voltage: 'ระดับแรงดัน',
       weather: 'อากาศ',
-      operation: 'การทำงาน'
+      operation: 'การทำงาน',
+      deviceType: 'ประเภทอุปกรณ์ป้องกัน'
     },
-    availableFilters: ['responsible', 'workcenter', 'substation', 'circuit'],
+    availableFilters: ['province', 'workcenter', 'responsible', 'substation', 'circuit'],
     rankField: 'responsible',
     rankLabel: 'กฟฟ. ที่รับผิดชอบ',
     donutField: 'eventType',
@@ -393,10 +438,64 @@ const TABS = {
     donutTitle: 'สัดส่วนพบ/ไม่พบสาเหตุ'
   }
 };
-const FIELD_TO_INPUT = { responsible: 'fResponsible', workcenter: 'fWorkcenter', substation: 'fSubstation', circuit: 'fCircuit' };
+const FIELD_TO_INPUT = { province: 'fProvince', responsible: 'fResponsible', workcenter: 'fWorkcenter', substation: 'fSubstation', circuit: 'fCircuit' };
 
+/* Official province → work-center → responsible-office hierarchy (fixed reference
+   data, independent of what happens to be in the sheet). Used to make the
+   responsible-office dropdown a proper subset once a work center is picked. */
+const PEA_HIERARCHY = {
+  'ชัยนาท': {
+    'กฟจ.ชัยนาท': ['กฟจ.ชัยนาท', 'กฟส.สรรพยา', 'กฟส.มโนรมย์', 'กฟส.หันคา', 'กฟส.เนินขาม', 'กฟส.สรรคบุรี', 'กฟส.วัดสิงห์', 'กฟส.หนองมะโมง']
+  },
+  'นครสวรรค์': {
+    'กฟจ.นครสวรรค์': ['กฟจ.นครสวรรค์', 'กฟส.โกรกพระ', 'กฟส.เก้าเลี้ยว', 'กฟส.ท่าตะโก', 'กฟส.ไพศาลี', 'กฟส.หนองบัว', 'กฟส.ชุมแสง', 'กฟส.บรรพตพิสัย', 'กฟส.พยุหะคีรี'],
+    'กฟส.ลาดยาว': ['กฟส.ลาดยาว', 'กฟส.บ้านหนองเบน', 'กฟส.แม่วงก์', 'กฟส.ชุมตาบง', 'กฟส.แม่เปิน'],
+    'กฟส.ตาคลี': ['กฟส.ตาคลี', 'กฟส.ช่องแค', 'กฟส.หัวหวาย', 'กฟส.ตากฟ้า']
+  },
+  'สิงห์บุรี': {
+    'กฟจ.สิงห์บุรี': ['กฟจ.สิงห์บุรี', 'กฟส.บางระจัน', 'กฟส.อินทร์บุรี', 'กฟส.ค่ายบางระจัน', 'กฟส.ท่าช้าง', 'กฟส.พรหมบุรี']
+  },
+  'อุทัยธานี': {
+    'กฟจ.อุทัยธานี': ['กฟจ.อุทัยธานี', 'กฟส.ทัพทัน', 'กฟส.สว่างอารมณ์', 'กฟส.หนองขาหย่าง', 'กฟส.หนองฉาง', 'กฟส.ห้วยคต', 'กฟส.บ้านไร่', 'กฟส.เมืองการุ้ง', 'กฟส.ลานสัก']
+  },
+  'เพชรบูรณ์': {
+    'กฟจ.เพชรบูรณ์': ['กฟจ.เพชรบูรณ์', 'กฟส.วังชมภู', 'กฟส.ชนแดน', 'กฟส.เขาค้อ', 'กฟส.วังโป่ง'],
+    'กฟส.หนองไผ่': ['กฟส.หนองไผ่'],
+    'กฟส.บึงสามพัน': ['กฟส.บึงสามพัน', 'กฟส.วิเชียรบุรี', 'กฟส.พุเตย', 'กฟส.ศรีเทพ'],
+    'กฟส.หล่มสัก': ['กฟส.หล่มสัก', 'กฟส.บ้านกลาง', 'กฟส.แคมป์สน', 'กฟส.น้ำหนาว', 'กฟส.หล่มเก่า', 'กฟส.ตาดกลอย']
+  },
+  'ลพบุรี': {
+    'กฟจ.ลพบุรี': ['กฟจ.ลพบุรี', 'กฟส.ท่าวุ้ง'],
+    'กฟส.พัฒนานิคม': ['กฟส.พัฒนานิคม', 'กฟส.บ้านแก่งเสือเต้น'],
+    'กฟส.โคกสำโรง': ['กฟส.โคกสำโรง', 'กฟส.สระโบสถ์', 'กฟส.หนองม่วง', 'กฟส.โคกเจริญ', 'กฟส.บ้านหมี่'],
+    'กฟส.ชัยบาดาล': ['กฟส.ชัยบาดาล', 'กฟส.ลำสนธิ', 'กฟส.ท่าหลวง']
+  }
+};
+const PROVINCE_LIST = Object.keys(PEA_HIERARCHY);
+const WORKCENTER_TO_PROVINCE = {};
+const WORKCENTER_TO_RESPONSIBLES = {};
+Object.keys(PEA_HIERARCHY).forEach(prov => {
+  Object.keys(PEA_HIERARCHY[prov]).forEach(wc => {
+    WORKCENTER_TO_PROVINCE[wc] = prov;
+    WORKCENTER_TO_RESPONSIBLES[wc] = PEA_HIERARCHY[prov][wc];
+  });
+});
+function provinceWorkcenters(prov) { return prov ? Object.keys(PEA_HIERARCHY[prov] || {}) : []; }
+// Canonical list of every กฟฟ.จุดรวมงาน in official hierarchy order (province by province),
+// used so status charts always show every office - even ones with zero events right now.
+const ALL_WORKCENTERS_ORDERED = [];
+Object.keys(PEA_HIERARCHY).forEach(prov => {
+  Object.keys(PEA_HIERARCHY[prov]).forEach(wc => ALL_WORKCENTERS_ORDERED.push(wc));
+});
+
+function todayRange() {
+  const from = new Date(); from.setHours(0, 0, 0, 0);
+  const to = new Date(); to.setHours(23, 59, 59, 999);
+  return { from, to };
+}
 Object.keys(TABS).forEach(k => {
-  TABS[k].filters = { preset: 'all', from: null, to: null, responsible: '', workcenter: '', substation: '', circuit: '' };
+  const r = todayRange();
+  TABS[k].filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false };
   TABS[k].state = { cols: null, rows: [], loading: false, loaded: false, error: null, lastFetch: null, listLimit: 20, fieldCols: null, dateCol: null, timeCol: null };
 });
 let activeTab = 'outage';
@@ -489,7 +588,7 @@ function D(tab, row) { const col = TABS[tab].state.dateCol; return col ? row[col
 function Tm(tab, row) { const col = TABS[tab].state.timeCol; return col ? row[col] : null; }
 function effectiveAvailable(tab) {
   const cfg = TABS[tab]; const fc = cfg.state.fieldCols || {};
-  return cfg.availableFilters.filter(k => fc[k]);
+  return cfg.availableFilters.filter(k => k === 'province' || fc[k]);
 }
 
 /* ---------------- cell value helpers ---------------- */
@@ -552,18 +651,45 @@ function hexToRgba(hex, alpha) {
   const r = parseInt(hex.substring(0, 2), 16), g = parseInt(hex.substring(2, 4), 16), b = parseInt(hex.substring(4, 6), 16);
   return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
 }
+/* WCAG-ish relative luminance, used to pick readable label text (white vs dark)
+   for whatever fill color a bar/segment happens to have. */
+function relLuminance(hex) {
+  hex = (hex || '').replace('#', '').trim();
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  if (hex.length !== 6) return 0;
+  const chan = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const r = chan(parseInt(hex.substring(0, 2), 16)), g = chan(parseInt(hex.substring(2, 4), 16)), b = chan(parseInt(hex.substring(4, 6), 16));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrastTextColor(hex) { return relLuminance(hex) > 0.45 ? '#1a1a1a' : '#ffffff'; }
 
 /* ---------------- filtering ---------------- */
 function applyPreset(tab, preset) {
   const cfg = TABS[tab];
   cfg.filters.preset = preset;
   if (preset === 'all') { cfg.filters.from = null; cfg.filters.to = null; }
-  else {
+  else if (preset === 'today') {
+    const r = todayRange(); cfg.filters.from = r.from; cfg.filters.to = r.to;
+  } else if (preset === 'yesterday') {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    const from = new Date(d); from.setHours(0, 0, 0, 0);
+    const to = new Date(d); to.setHours(23, 59, 59, 999);
+    cfg.filters.from = from; cfg.filters.to = to;
+  } else {
     const days = parseInt(preset, 10);
     const to = new Date(); to.setHours(23, 59, 59, 999);
     const from = new Date(); from.setDate(from.getDate() - days + 1); from.setHours(0, 0, 0, 0);
     cfg.filters.from = from; cfg.filters.to = to;
   }
+}
+function shiftDay(tab, delta) {
+  const cfg = TABS[tab]; const f = cfg.filters;
+  const base = f.from ? new Date(f.from) : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+  base.setDate(base.getDate() + delta);
+  const from = new Date(base); from.setHours(0, 0, 0, 0);
+  const to = new Date(base); to.setHours(23, 59, 59, 999);
+  f.from = from; f.to = to; f.preset = null;
+  renderAll();
 }
 function getFilteredRows(tab) {
   const cfg = TABS[tab]; const st = cfg.state; const f = cfg.filters;
@@ -575,8 +701,16 @@ function getFilteredRows(tab) {
     if (f.from && d && d < f.from) return false;
     if (f.to && d && d > f.to) return false;
     for (const key of avail) {
+      if (key === 'province') continue;
       const val = f[key];
       if (val) { if (cellText(F(tab, row, key)).trim() !== val) return false; }
+    }
+    if (f.province) {
+      const wcVal = cellText(F(tab, row, 'workcenter')).trim();
+      if (WORKCENTER_TO_PROVINCE[wcVal] !== f.province) return false;
+    }
+    if (tab === 'oca' && f.pendingOnly) {
+      if (classifyCalcStatus(cellText(F(tab, row, 'calcStatus'))) !== 'pending') return false;
     }
     return true;
   });
@@ -645,6 +779,64 @@ function setChartEmpty(canvasId, wrapEl, isEmpty, msg) {
 }
 const FONT = { family: "'Noto Sans Thai', sans-serif", size: 10.5 };
 const PALETTE_VARS = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7', '--series-8'];
+
+/* Draws the numeric value on every bar/segment: centered inside when there's
+   room, just outside the bar end otherwise. Used by every bar chart so counts
+   are readable at a glance, not only on hover. */
+const valueLabelsPlugin = {
+  id: 'valueLabels',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const isHorizontal = chart.options.indexAxis === 'y';
+    const stacked = chart.data.datasets.length > 1;
+    ctx.save();
+    ctx.font = "700 11px 'Noto Sans Thai', sans-serif";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    chart.data.datasets.forEach((dataset, dsIndex) => {
+      const meta = chart.getDatasetMeta(dsIndex);
+      if (meta.hidden) return;
+      const barColor = typeof dataset.backgroundColor === 'string' ? dataset.backgroundColor : null;
+      const minInside = stacked ? 15 : 26;
+      meta.data.forEach((el, i) => {
+        const value = dataset.data[i];
+        if (value === null || value === undefined || value === 0) return;
+        const props = el.getProps(['x', 'y', 'base'], true);
+        const lengthPx = isHorizontal ? Math.abs(props.x - props.base) : Math.abs(props.base - props.y);
+        const mid = isHorizontal ? { x: (props.x + props.base) / 2, y: props.y } : { x: props.x, y: (props.base + props.y) / 2 };
+        const text = String(value);
+        if (lengthPx >= minInside) {
+          const segColor = barColor || (Array.isArray(dataset.backgroundColor) ? dataset.backgroundColor[i] : null) || cssVar('--series-1');
+          ctx.fillStyle = contrastTextColor(segColor);
+          ctx.fillText(text, mid.x, mid.y + 0.5);
+        } else if (!stacked) {
+          ctx.fillStyle = cssVar('--text-primary');
+          if (isHorizontal) { ctx.textAlign = 'left'; ctx.fillText(text, props.x + 6, props.y); ctx.textAlign = 'center'; }
+          else { ctx.textBaseline = 'bottom'; ctx.fillText(text, props.x, props.y - 4); ctx.textBaseline = 'middle'; }
+        }
+      });
+    });
+    ctx.restore();
+  }
+};
+function donutLegendLabels(chart) {
+  const data = chart.data;
+  if (!data.labels || !data.labels.length || !data.datasets.length) return [];
+  const ds = data.datasets[0];
+  const total = ds.data.reduce((a, b) => a + b, 0);
+  return data.labels.map((label, i) => {
+    const value = ds.data[i];
+    const pct = total ? Math.round(value / total * 100) : 0;
+    return {
+      text: label + '  ' + value + ' (' + pct + '%)',
+      fillStyle: ds.backgroundColor[i],
+      strokeStyle: ds.backgroundColor[i],
+      fontColor: cssVar('--text-secondary'),
+      hidden: false,
+      index: i
+    };
+  });
+}
 
 function chartLibReady(canvasId, wrapEl) {
   if (typeof Chart !== 'undefined') return true;
@@ -716,7 +908,7 @@ function renderDonutChart(tab, rows) {
     options: {
       responsive: true, maintainAspectRatio: false, cutout: '62%',
       plugins: {
-        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10 } },
+        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10, generateLabels: donutLegendLabels } },
         tooltip: { callbacks: { label: (item) => { const total = item.dataset.data.reduce((a, b) => a + b, 0); const pct = total ? Math.round(item.parsed / total * 100) : 0; return ' ' + item.label + ': ' + item.formattedValue + ' (' + pct + '%)'; } } }
       }
     }
@@ -737,6 +929,7 @@ function renderRankChart(tab, rows) {
   destroyChart('rank');
   chartInstances.rank = new Chart(canvas.getContext('2d'), {
     type: 'bar',
+    plugins: [valueLabelsPlugin],
     data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-1'), borderRadius: 4, maxBarThickness: 26 }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
@@ -764,18 +957,24 @@ function renderOcaStatusChart(tab, rows) {
     if (!map.has(wc)) map.set(wc, { done: 0, pending: 0 });
     map.get(wc)[status]++;
   });
-  let entries = Array.from(map.entries());
-  entries.sort((a, b) => (b[1].done + b[1].pending) - (a[1].done + a[1].pending));
-  entries = entries.slice(0, 8);
+  // Always list every official work center (in hierarchy order), even ones with
+  // zero events right now, then tack on anything found in the data that doesn't
+  // match the hierarchy (e.g. "ไม่ระบุ").
+  const orderedNames = ALL_WORKCENTERS_ORDERED.slice();
+  map.forEach((_, wc) => { if (!orderedNames.includes(wc)) orderedNames.push(wc); });
+  const entries = orderedNames.map(wc => [wc, map.get(wc) || { done: 0, pending: 0 }]);
   setChartEmpty('ocaStatusChart', wrap, false);
   destroyChart('ocaStatus');
+  // Give the bar list enough vertical room for every office instead of a fixed 220px.
+  wrap.style.height = Math.max(220, entries.length * 26 + 30) + 'px';
   chartInstances.ocaStatus = new Chart(canvas.getContext('2d'), {
     type: 'bar',
+    plugins: [valueLabelsPlugin],
     data: {
       labels: entries.map(e => e[0]),
       datasets: [
-        { label: 'คำนวณ OCA แล้ว', data: entries.map(e => e[1].done), backgroundColor: cssVar('--good'), stack: 's' },
-        { label: 'ยังไม่ได้คำนวณ', data: entries.map(e => e[1].pending), backgroundColor: cssVar('--critical'), stack: 's' }
+        { label: 'OCA', data: entries.map(e => e[1].done), backgroundColor: cssVar('--good'), stack: 's', maxBarThickness: 20 },
+        { label: 'ยังไม่ได้ดำเนินการ', data: entries.map(e => e[1].pending), backgroundColor: cssVar('--warning'), stack: 's', maxBarThickness: 20 }
       ]
     },
     options: {
@@ -788,6 +987,110 @@ function renderOcaStatusChart(tab, rows) {
       scales: {
         x: { stacked: true, beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
         y: { stacked: true, grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } } }
+      }
+    }
+  });
+}
+
+/* ---------------- outage-tab daily-report charts ---------------- */
+function classifyCauseKnown(text) {
+  const t = (text || '').trim();
+  if (!t) return null;
+  return /ไม่ทราบ|✗|false|no/i.test(t) ? 'ไม่ทราบสาเหตุ' : 'ทราบสาเหตุ';
+}
+function renderDeviceTypeChart(tab, rows) {
+  const canvas = document.getElementById('deviceTypeChart'); const wrap = canvas.parentElement;
+  if (!chartLibReady('deviceTypeChart', wrap)) return;
+  const counts = new Map();
+  rows.forEach(r => { let v = cellText(F(tab, r, 'deviceType')).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
+  if (counts.size === 0) { destroyChart('deviceType'); setChartEmpty('deviceTypeChart', wrap, true); return; }
+  const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  setChartEmpty('deviceTypeChart', wrap, false);
+  destroyChart('deviceType');
+  chartInstances.deviceType = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    plugins: [valueLabelsPlugin],
+    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-1'), borderRadius: 4, maxBarThickness: 30 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
+      scales: {
+        x: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
+        y: { grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } } }
+      }
+    }
+  });
+}
+function renderOperationChart(tab, rows) {
+  const canvas = document.getElementById('operationChart'); const wrap = canvas.parentElement;
+  if (!chartLibReady('operationChart', wrap)) return;
+  const counts = new Map();
+  rows.forEach(r => { let v = cellText(F(tab, r, 'operation')).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
+  if (counts.size === 0) { destroyChart('operation'); setChartEmpty('operationChart', wrap, true); return; }
+  let entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  const maxSlices = 6;
+  if (entries.length > maxSlices) {
+    const top = entries.slice(0, maxSlices - 1);
+    const rest = entries.slice(maxSlices - 1).reduce((s, e) => s + e[1], 0);
+    entries = top.concat([['อื่นๆ', rest]]);
+  }
+  setChartEmpty('operationChart', wrap, false);
+  const colors = entries.map((_, i) => cssVar(PALETTE_VARS[i % PALETTE_VARS.length]));
+  destroyChart('operation');
+  chartInstances.operation = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: colors, borderColor: cssVar('--card'), borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10, generateLabels: donutLegendLabels } },
+        tooltip: { callbacks: { label: (item) => { const total = item.dataset.data.reduce((a, b) => a + b, 0); const pct = total ? Math.round(item.parsed / total * 100) : 0; return ' ' + item.label + ': ' + item.formattedValue + ' (' + pct + '%)'; } } }
+      }
+    }
+  });
+}
+function renderCauseKnownChart(tab, rows) {
+  const canvas = document.getElementById('causeKnownChart'); const wrap = canvas.parentElement;
+  if (!chartLibReady('causeKnownChart', wrap)) return;
+  const counts = new Map();
+  rows.forEach(r => { const cls = classifyCauseKnown(cellText(F(tab, r, 'causeKnown'))); if (!cls) return; counts.set(cls, (counts.get(cls) || 0) + 1); });
+  if (counts.size === 0) { destroyChart('causeKnown'); setChartEmpty('causeKnownChart', wrap, true); return; }
+  const order = ['ทราบสาเหตุ', 'ไม่ทราบสาเหตุ'];
+  const entries = order.filter(k => counts.has(k)).map(k => [k, counts.get(k)]);
+  setChartEmpty('causeKnownChart', wrap, false);
+  const colorMap = { 'ทราบสาเหตุ': cssVar('--good'), 'ไม่ทราบสาเหตุ': cssVar('--series-1') };
+  destroyChart('causeKnown');
+  chartInstances.causeKnown = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: entries.map(e => colorMap[e[0]]), borderColor: cssVar('--card'), borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10, generateLabels: donutLegendLabels } },
+        tooltip: { callbacks: { label: (item) => { const total = item.dataset.data.reduce((a, b) => a + b, 0); const pct = total ? Math.round(item.parsed / total * 100) : 0; return ' ' + item.label + ': ' + item.formattedValue + ' (' + pct + '%)'; } } }
+      }
+    }
+  });
+}
+function renderCauseCategoryChart(tab, rows) {
+  const canvas = document.getElementById('causeCategoryChart'); const wrap = canvas.parentElement;
+  if (!chartLibReady('causeCategoryChart', wrap)) return;
+  const counts = new Map();
+  rows.forEach(r => { let v = cellText(F(tab, r, 'causeCategory')).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
+  if (counts.size === 0) { destroyChart('causeCategory'); setChartEmpty('causeCategoryChart', wrap, true); return; }
+  const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  setChartEmpty('causeCategoryChart', wrap, false);
+  destroyChart('causeCategory');
+  chartInstances.causeCategory = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    plugins: [valueLabelsPlugin],
+    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-1'), borderRadius: 4, maxBarThickness: 40 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 }, maxRotation: 0, autoSkip: false } },
+        y: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } }
       }
     }
   });
@@ -870,24 +1173,78 @@ function updateFilterVisibility(tab) {
   const avail = effectiveAvailable(tab);
   document.querySelectorAll('.filters [data-field]').forEach(el => {
     const key = el.getAttribute('data-field');
+    if (key === 'pendingOnly') {
+      const can = tab === 'oca' && TABS[tab].state.fieldCols && TABS[tab].state.fieldCols.calcStatus;
+      el.style.display = can ? '' : 'none';
+      return;
+    }
     el.style.display = avail.includes(key) ? '' : 'none';
   });
 }
+function updateDayLabel(tab) {
+  const f = TABS[tab].filters;
+  const el = document.getElementById('dayLabel');
+  if (f.from && f.to && toDateInputValue(f.from) === toDateInputValue(f.to)) {
+    el.textContent = 'ข้อมูลประจำวันที่ ' + f.from.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+  } else if (f.from || f.to) {
+    el.textContent = 'ช่วงข้อมูล: ' + (f.from ? f.from.toLocaleDateString('th-TH') : '…') + ' – ' + (f.to ? f.to.toLocaleDateString('th-TH') : '…');
+  } else {
+    el.textContent = 'แสดงข้อมูลทั้งหมด';
+  }
+}
+function fillSelectOptions(id, values, currentVal) {
+  const sel = document.getElementById(id); if (!sel) return;
+  while (sel.firstChild) sel.removeChild(sel.firstChild);
+  const optAll = document.createElement('option'); optAll.value = ''; optAll.textContent = 'ทั้งหมด'; sel.appendChild(optAll);
+  values.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+  sel.value = values.includes(currentVal) ? currentVal : '';
+}
+function dataValues(tab, key) {
+  const cfg = TABS[tab]; const col = cfg.state.fieldCols ? cfg.state.fieldCols[key] : null;
+  const set = new Set();
+  if (col) cfg.state.rows.forEach(r => { const t = cellText(r[col]).trim(); if (t) set.add(t); });
+  return set;
+}
 function populateFilterOptions(tab) {
-  const cfg = TABS[tab];
   effectiveAvailable(tab).forEach(key => {
-    const col = cfg.state.fieldCols[key];
-    const set = new Set();
-    cfg.state.rows.forEach(r => { const t = cellText(r[col]).trim(); if (t) set.add(t); });
-    const values = Array.from(set).sort((a, b) => a.localeCompare(b, 'th'));
-    const sel = document.getElementById(FIELD_TO_INPUT[key]);
-    if (!sel) return;
-    const current = sel.value;
-    while (sel.firstChild) sel.removeChild(sel.firstChild);
-    const optAll = document.createElement('option'); optAll.value = ''; optAll.textContent = 'ทั้งหมด'; sel.appendChild(optAll);
-    values.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
-    if (values.includes(current)) sel.value = current;
+    if (key === 'province' || key === 'workcenter' || key === 'responsible') return; // handled by refreshCascadeOptions
+    const values = Array.from(dataValues(tab, key)).sort((a, b) => a.localeCompare(b, 'th'));
+    fillSelectOptions(FIELD_TO_INPUT[key], values, document.getElementById(FIELD_TO_INPUT[key]).value);
   });
+  if (tab === 'outage') { populateProvinceOptions(); refreshCascadeOptions(tab); }
+}
+function populateProvinceOptions() {
+  const sel = document.getElementById('fProvince'); if (!sel) return;
+  fillSelectOptions('fProvince', PROVINCE_LIST, sel.value);
+}
+function refreshCascadeOptions(tab) {
+  if (tab !== 'outage') return;
+  const cfg = TABS[tab]; const f = cfg.filters;
+  const dataWc = dataValues(tab, 'workcenter');
+  let wcOptions;
+  if (f.province) {
+    const provWcs = provinceWorkcenters(f.province);
+    const inData = provWcs.filter(wc => dataWc.has(wc));
+    wcOptions = inData.length ? inData : provWcs;
+  } else {
+    wcOptions = Array.from(dataWc).sort((a, b) => a.localeCompare(b, 'th'));
+  }
+  fillSelectOptions('fWorkcenter', wcOptions, f.workcenter);
+  if (!wcOptions.includes(f.workcenter)) f.workcenter = '';
+
+  const dataResp = dataValues(tab, 'responsible');
+  let respOptions;
+  if (f.workcenter && WORKCENTER_TO_RESPONSIBLES[f.workcenter]) {
+    respOptions = WORKCENTER_TO_RESPONSIBLES[f.workcenter];
+  } else if (f.province) {
+    const set = new Set();
+    provinceWorkcenters(f.province).forEach(wc => (WORKCENTER_TO_RESPONSIBLES[wc] || []).forEach(r => set.add(r)));
+    respOptions = Array.from(set);
+  } else {
+    respOptions = Array.from(dataResp).sort((a, b) => a.localeCompare(b, 'th'));
+  }
+  fillSelectOptions('fResponsible', respOptions, f.responsible);
+  if (!respOptions.includes(f.responsible)) f.responsible = '';
 }
 function setSelectValue(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
 function syncFilterControlsFromState(tab) {
@@ -895,12 +1252,14 @@ function syncFilterControlsFromState(tab) {
   document.getElementById('dateFrom').value = f.from ? toDateInputValue(f.from) : '';
   document.getElementById('dateTo').value = f.to ? toDateInputValue(f.to) : '';
   Object.keys(FIELD_TO_INPUT).forEach(key => setSelectValue(FIELD_TO_INPUT[key], f[key] || ''));
+  const pendingCb = document.getElementById('fPendingOnly'); if (pendingCb) pendingCb.checked = !!f.pendingOnly;
   document.querySelectorAll('.preset-chip').forEach(btn => btn.setAttribute('aria-pressed', btn.dataset.preset === f.preset ? 'true' : 'false'));
 }
 function updateFilterCount(tab) {
   const f = TABS[tab].filters; let n = 0;
-  if (f.preset !== 'all') n++;
+  if (f.preset !== 'today') n++;
   effectiveAvailable(tab).forEach(k => { if (f[k]) n++; });
+  if (tab === 'oca' && f.pendingOnly) n++;
   document.getElementById('filterCount').textContent = n ? ('ใช้ตัวกรอง ' + n + ' รายการ') : '';
 }
 function updateRefreshBtn() {
@@ -927,17 +1286,18 @@ function renderBanners() {
   }
   updateRefreshBtn();
 }
+const OUTAGE_CHART_IDS = ['deviceTypeChart', 'operationChart', 'causeKnownChart', 'causeCategoryChart'];
+const OCA_CHART_IDS = ['trendChart', 'donutChart', 'rankChart', 'ocaStatusChart'];
 function renderEmptyPlaceholders() {
   const grid = document.getElementById('kpiGrid'); while (grid.firstChild) grid.removeChild(grid.firstChild);
-  ['trendChart', 'donutChart', 'rankChart'].forEach(id => {
+  document.getElementById('outageChartsGrid').style.display = activeTab === 'outage' ? '' : 'none';
+  document.getElementById('ocaChartsGrid').style.display = activeTab === 'oca' ? '' : 'none';
+  document.getElementById('ocaStatusCardWrap').style.display = activeTab === 'oca' ? '' : 'none';
+  const ids = activeTab === 'outage' ? OUTAGE_CHART_IDS : OCA_CHART_IDS;
+  ids.forEach(id => {
     const wrap = document.getElementById(id).parentElement;
     setChartEmpty(id, wrap, true, TABS[activeTab].state.loading ? 'กำลังโหลด...' : 'ยังไม่มีข้อมูล');
   });
-  document.getElementById('ocaStatusCardWrap').style.display = (activeTab === 'oca') ? '' : 'none';
-  if (activeTab === 'oca') {
-    const wrap = document.getElementById('ocaStatusChart').parentElement;
-    setChartEmpty('ocaStatusChart', wrap, true, TABS[activeTab].state.loading ? 'กำลังโหลด...' : 'ยังไม่มีข้อมูล');
-  }
   const listEl = document.getElementById('evList'); while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
   document.getElementById('listCount').textContent = '';
   document.getElementById('moreBtn').style.display = 'none';
@@ -946,6 +1306,7 @@ function renderAll() {
   const tab = activeTab, cfg = TABS[tab];
   updateFilterVisibility(tab);
   syncFilterControlsFromState(tab);
+  updateDayLabel(tab);
   document.getElementById('pageTitle').textContent = cfg.title;
   document.getElementById('listTitle').textContent = cfg.listTitle;
   document.getElementById('lastUpdated').textContent = cfg.state.lastFetch
@@ -955,13 +1316,25 @@ function renderAll() {
   if (!cfg.state.loaded) { renderEmptyPlaceholders(); return; }
   const rows = getFilteredRows(tab);
   renderKPIs(tab, rows);
-  try { renderTrendChart(tab, rows); } catch (e) { console.error('trend chart', e); }
-  try { renderDonutChart(tab, rows); } catch (e) { console.error('donut chart', e); }
-  try { renderRankChart(tab, rows); } catch (e) { console.error('rank chart', e); }
-  const statusWrap = document.getElementById('ocaStatusCardWrap');
-  const canCalcStatus = tab === 'oca' && cfg.state.fieldCols && cfg.state.fieldCols.calcStatus;
-  statusWrap.style.display = canCalcStatus ? '' : 'none';
-  if (canCalcStatus) { try { renderOcaStatusChart(tab, rows); } catch (e) { console.error('oca status chart', e); } }
+
+  document.getElementById('outageChartsGrid').style.display = tab === 'outage' ? '' : 'none';
+  document.getElementById('ocaChartsGrid').style.display = tab === 'oca' ? '' : 'none';
+
+  if (tab === 'outage') {
+    try { renderDeviceTypeChart(tab, rows); } catch (e) { console.error('device type chart', e); }
+    try { renderOperationChart(tab, rows); } catch (e) { console.error('operation chart', e); }
+    try { renderCauseKnownChart(tab, rows); } catch (e) { console.error('cause known chart', e); }
+    try { renderCauseCategoryChart(tab, rows); } catch (e) { console.error('cause category chart', e); }
+  } else {
+    try { renderTrendChart(tab, rows); } catch (e) { console.error('trend chart', e); }
+    try { renderDonutChart(tab, rows); } catch (e) { console.error('donut chart', e); }
+    try { renderRankChart(tab, rows); } catch (e) { console.error('rank chart', e); }
+    const statusWrap = document.getElementById('ocaStatusCardWrap');
+    const canCalcStatus = cfg.state.fieldCols && cfg.state.fieldCols.calcStatus;
+    statusWrap.style.display = canCalcStatus ? '' : 'none';
+    if (canCalcStatus) { try { renderOcaStatusChart(tab, rows); } catch (e) { console.error('oca status chart', e); } }
+  }
+
   renderList(tab, rows);
   updateFilterCount(tab);
 }
@@ -991,16 +1364,34 @@ document.getElementById('dateTo').addEventListener('change', (e) => {
   cfg.filters.to = e.target.value ? new Date(e.target.value + 'T23:59:59') : null;
   renderAll();
 });
-Object.keys(FIELD_TO_INPUT).forEach(key => {
+document.getElementById('fProvince').addEventListener('change', (e) => {
+  TABS[activeTab].filters.province = e.target.value;
+  refreshCascadeOptions(activeTab);
+  renderAll();
+});
+document.getElementById('fWorkcenter').addEventListener('change', (e) => {
+  TABS[activeTab].filters.workcenter = e.target.value;
+  refreshCascadeOptions(activeTab);
+  renderAll();
+});
+['responsible', 'substation', 'circuit'].forEach(key => {
   document.getElementById(FIELD_TO_INPUT[key]).addEventListener('change', (e) => {
     TABS[activeTab].filters[key] = e.target.value;
     renderAll();
   });
 });
+document.getElementById('fPendingOnly').addEventListener('change', (e) => {
+  TABS[activeTab].filters.pendingOnly = e.target.checked;
+  renderAll();
+});
+document.getElementById('prevDayBtn').addEventListener('click', () => shiftDay(activeTab, -1));
+document.getElementById('nextDayBtn').addEventListener('click', () => shiftDay(activeTab, 1));
 document.getElementById('clearBtn').addEventListener('click', () => {
   const cfg = TABS[activeTab];
-  cfg.filters = { preset: 'all', from: null, to: null, responsible: '', workcenter: '', substation: '', circuit: '' };
+  const r = todayRange();
+  cfg.filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false };
   cfg.state.listLimit = 20;
+  refreshCascadeOptions(activeTab);
   renderAll();
 });
 document.getElementById('moreBtn').addEventListener('click', () => {
@@ -1010,6 +1401,7 @@ document.getElementById('moreBtn').addEventListener('click', () => {
 
 /* ---------------- init ---------------- */
 updateFilterVisibility(activeTab);
+populateProvinceOptions();
 loadSheetData('outage');
 renderAll();
 </script>
