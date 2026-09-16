@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://docs.google.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>
 /* Chart.js v4.4.4 (UMD) — inlined so the dashboard has zero external script
@@ -454,6 +455,12 @@ let ALL_WORKCENTERS_ORDERED = [];
 // falling back to the work-center hierarchy above otherwise.
 let STATION_TO_PROVINCE = {};
 let CIRCUIT_TO_PROVINCE = {};
+// จังหวัด -> สถานีไฟฟ้า -> รหัสอุปกรณ์ hierarchy, also loaded live from the "Province"
+// sheet, so picking a province narrows the substation list and picking a
+// substation narrows the circuit/equipment-code list.
+let PROVINCE_TO_STATIONS = {};
+let STATION_TO_CIRCUITS = {};
+let PROVINCE_TO_CIRCUITS = {};
 let referenceDataLoaded = { response: false, province: false };
 function provinceWorkcenters(prov) { return prov ? Object.keys(PEA_HIERARCHY[prov] || {}) : []; }
 function stripProvincePrefix(v) { return (v || '').toString().replace(/^จังหวัด/, '').trim(); }
@@ -477,7 +484,7 @@ function todayRange() {
 Object.keys(TABS).forEach(k => {
   const r = todayRange();
   TABS[k].filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false };
-  TABS[k].state = { cols: null, rows: [], loading: false, loaded: false, error: null, lastFetch: null, listLimit: 20, fieldCols: null, dateCol: null, timeCol: null };
+  TABS[k].state = { cols: null, rows: [], loading: false, loaded: false, error: null, lastFetch: null, listLimit: 20, fieldCols: null, dateCol: null, timeCol: null, usingCache: false, cachedAt: null };
 });
 let activeTab = 'outage';
 const chartInstances = {};
@@ -527,6 +534,42 @@ function fetchGvizJsonp(sheetId, sheetName, onSuccess, onError) {
   document.head.appendChild(script);
 }
 
+/* ---------------- stale-while-revalidate cache (localStorage) ----------------
+   On a fresh page load, the very first thing anyone sees is a blank "loading"
+   screen while we wait on Google Sheets. Caching the last successful fetch lets
+   us paint that same data INSTANTLY on the next visit, then quietly refetch and
+   swap in the live numbers once they arrive - the page never feels like it's
+   starting from zero. Wrapped in try/catch throughout: a full/blocked
+   localStorage (private browsing, quota) just means "no cache", never a crash. */
+const SHEET_CACHE_PREFIX = 'peaDash_cache_v1_';
+function saveSheetCache(tab, cols, rows) {
+  try {
+    localStorage.setItem(SHEET_CACHE_PREFIX + tab, JSON.stringify({ cols, rows, savedAt: Date.now() }));
+  } catch (e) { /* storage full or unavailable - skip caching silently */ }
+}
+function loadSheetCache(tab) {
+  try {
+    const raw = localStorage.getItem(SHEET_CACHE_PREFIX + tab);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.cols) || !Array.isArray(parsed.rows)) return null;
+    return parsed;
+  } catch (e) { return null; }
+}
+function hydrateFromCache(tab) {
+  const cached = loadSheetCache(tab);
+  if (!cached) return false;
+  const cfg = TABS[tab];
+  cfg.state.cols = cached.cols;
+  cfg.state.rows = cached.rows;
+  cfg.state.loaded = true;
+  cfg.state.usingCache = true;
+  cfg.state.cachedAt = new Date(cached.savedAt);
+  resolveHeaders(tab);
+  populateFilterOptions(tab);
+  return true;
+}
+
 function loadSheetData(tab) {
   const cfg = TABS[tab];
   if (cfg.state.loading) return;
@@ -538,11 +581,13 @@ function loadSheetData(tab) {
     cfg.state.rows = result.rows;
     cfg.state.loading = false;
     cfg.state.loaded = true;
+    cfg.state.usingCache = false;
     cfg.state.error = null;
     cfg.state.lastFetch = new Date();
     resolveHeaders(tab);
     populateFilterOptions(tab);
     if (activeTab === tab) renderAll();
+    saveSheetCache(tab, result.cols, result.rows);
   }, function (err) { handleError(tab, err); });
 }
 
@@ -592,6 +637,7 @@ function loadReferenceData() {
   fetchGvizJsonp(SHARED_SHEET_ID, 'Province', function (result) {
     const cols = result.cols;
     const stMap = {}, circMap = {};
+    const provToStations = {}, stationToCircuits = {}, provToCircuits = {};
     result.rows.forEach(row => {
       const station = cellText(row[cols[0]]).trim();
       const circuit = cellText(row[cols[1]]).trim();
@@ -599,10 +645,26 @@ function loadReferenceData() {
       if (!prov) return;
       if (circuit && !circMap[circuit]) circMap[circuit] = prov;
       if (station && !stMap[station]) stMap[station] = prov;
+      if (station) {
+        if (!provToStations[prov]) provToStations[prov] = [];
+        if (!provToStations[prov].includes(station)) provToStations[prov].push(station);
+      }
+      if (station && circuit) {
+        if (!stationToCircuits[station]) stationToCircuits[station] = [];
+        if (!stationToCircuits[station].includes(circuit)) stationToCircuits[station].push(circuit);
+      }
+      if (circuit) {
+        if (!provToCircuits[prov]) provToCircuits[prov] = [];
+        if (!provToCircuits[prov].includes(circuit)) provToCircuits[prov].push(circuit);
+      }
     });
     STATION_TO_PROVINCE = stMap;
     CIRCUIT_TO_PROVINCE = circMap;
+    PROVINCE_TO_STATIONS = provToStations;
+    STATION_TO_CIRCUITS = stationToCircuits;
+    PROVINCE_TO_CIRCUITS = provToCircuits;
     referenceDataLoaded.province = true;
+    Object.keys(TABS).forEach(t => { if (TABS[t].state.loaded) refreshCascadeOptions(t); });
     renderAll();
   }, function (err) { console.error('โหลดชีต Province ไม่สำเร็จ', err); });
 }
@@ -888,7 +950,10 @@ function chartLibReady(canvasId, wrapEl) {
 }
 
 function classifyCalcStatus(text) {
-  return /ยัง/.test(text || '') ? 'pending' : 'done';
+  // ช่อง "คิด OCA" ที่ยังไม่ได้กรอกอะไรเลย (ว่างเปล่า) ถือว่ายังไม่ได้ดำเนินการ - ไม่ใช่ "เสร็จแล้ว"
+  const t = (text || '').trim();
+  if (!t) return 'pending';
+  return /ยัง/.test(t) ? 'pending' : 'done';
 }
 function renderOcaStatusChart(tab, rows) {
   const canvas = document.getElementById('ocaStatusChart');
@@ -1151,12 +1216,14 @@ function dataValues(tab, key) {
   return set;
 }
 function populateFilterOptions(tab) {
-  effectiveAvailable(tab).forEach(key => {
-    if (key === 'province' || key === 'workcenter' || key === 'responsible') return; // handled by refreshCascadeOptions
+  const avail = effectiveAvailable(tab);
+  const cascaded = avail.includes('province') ? ['province', 'workcenter', 'responsible', 'substation', 'circuit'] : ['province'];
+  avail.forEach(key => {
+    if (cascaded.includes(key)) return; // handled by refreshCascadeOptions below
     const values = Array.from(dataValues(tab, key)).sort((a, b) => a.localeCompare(b, 'th'));
     fillSelectOptions(FIELD_TO_INPUT[key], values, document.getElementById(FIELD_TO_INPUT[key]).value);
   });
-  if (effectiveAvailable(tab).includes('province')) { populateProvinceOptions(); refreshCascadeOptions(tab); }
+  if (avail.includes('province')) { populateProvinceOptions(); refreshCascadeOptions(tab); }
 }
 function populateProvinceOptions() {
   const sel = document.getElementById('fProvince'); if (!sel) return;
@@ -1181,20 +1248,54 @@ function refreshCascadeOptions(tab) {
     if (!wcOptions.includes(f.workcenter)) f.workcenter = '';
   }
 
-  if (!avail.includes('responsible')) return;
-  const dataResp = dataValues(tab, 'responsible');
-  let respOptions;
-  if (f.workcenter && WORKCENTER_TO_RESPONSIBLES[f.workcenter]) {
-    respOptions = WORKCENTER_TO_RESPONSIBLES[f.workcenter];
-  } else if (f.province) {
-    const set = new Set();
-    provinceWorkcenters(f.province).forEach(wc => (WORKCENTER_TO_RESPONSIBLES[wc] || []).forEach(r => set.add(r)));
-    respOptions = Array.from(set);
-  } else {
-    respOptions = Array.from(dataResp).sort((a, b) => a.localeCompare(b, 'th'));
+  if (avail.includes('responsible')) {
+    const dataResp = dataValues(tab, 'responsible');
+    let respOptions;
+    if (f.workcenter && WORKCENTER_TO_RESPONSIBLES[f.workcenter]) {
+      respOptions = WORKCENTER_TO_RESPONSIBLES[f.workcenter];
+    } else if (f.province) {
+      const set = new Set();
+      provinceWorkcenters(f.province).forEach(wc => (WORKCENTER_TO_RESPONSIBLES[wc] || []).forEach(r => set.add(r)));
+      respOptions = Array.from(set);
+    } else {
+      respOptions = Array.from(dataResp).sort((a, b) => a.localeCompare(b, 'th'));
+    }
+    fillSelectOptions('fResponsible', respOptions, f.responsible);
+    if (!respOptions.includes(f.responsible)) f.responsible = '';
   }
-  fillSelectOptions('fResponsible', respOptions, f.responsible);
-  if (!respOptions.includes(f.responsible)) f.responsible = '';
+
+  // จังหวัด -> สถานีไฟฟ้า -> รหัสอุปกรณ์ (from the "Province" sheet)
+  if (avail.includes('substation')) {
+    const dataSt = dataValues(tab, 'substation');
+    let stOptions;
+    if (f.province) {
+      const provSt = PROVINCE_TO_STATIONS[f.province] || [];
+      const inData = provSt.filter(s => dataSt.has(s));
+      stOptions = inData.length ? inData : provSt;
+    } else {
+      stOptions = Array.from(dataSt).sort((a, b) => a.localeCompare(b, 'th'));
+    }
+    fillSelectOptions('fSubstation', stOptions, f.substation);
+    if (!stOptions.includes(f.substation)) f.substation = '';
+  }
+
+  if (avail.includes('circuit')) {
+    const dataCk = dataValues(tab, 'circuit');
+    let ckOptions;
+    if (f.substation && STATION_TO_CIRCUITS[f.substation]) {
+      const stCk = STATION_TO_CIRCUITS[f.substation];
+      const inData = stCk.filter(c => dataCk.has(c));
+      ckOptions = inData.length ? inData : stCk;
+    } else if (f.province && PROVINCE_TO_CIRCUITS[f.province]) {
+      const provCk = PROVINCE_TO_CIRCUITS[f.province];
+      const inData = provCk.filter(c => dataCk.has(c));
+      ckOptions = inData.length ? inData : provCk;
+    } else {
+      ckOptions = Array.from(dataCk).sort((a, b) => a.localeCompare(b, 'th'));
+    }
+    fillSelectOptions('fCircuit', ckOptions, f.circuit);
+    if (!ckOptions.includes(f.circuit)) f.circuit = '';
+  }
 }
 function setSelectValue(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
 function syncFilterControlsFromState(tab) {
@@ -1261,7 +1362,9 @@ function renderAll() {
   document.getElementById('listTitle').textContent = cfg.listTitle;
   document.getElementById('lastUpdated').textContent = cfg.state.lastFetch
     ? ('อัปเดตล่าสุด ' + cfg.state.lastFetch.toLocaleTimeString('th-TH'))
-    : (cfg.state.loading ? 'กำลังโหลดข้อมูล...' : 'ยังไม่ได้โหลดข้อมูล');
+    : cfg.state.usingCache
+      ? ('ข้อมูลจากแคชเมื่อ ' + cfg.state.cachedAt.toLocaleTimeString('th-TH') + ' · กำลังโหลดข้อมูลล่าสุด...')
+      : (cfg.state.loading ? 'กำลังโหลดข้อมูล...' : 'ยังไม่ได้โหลดข้อมูล');
   renderBanners();
   if (!cfg.state.loaded) { renderEmptyPlaceholders(); return; }
   const rows = getFilteredRows(tab);
@@ -1453,7 +1556,10 @@ document.querySelectorAll('.rail-btn').forEach(btn => {
     if (tab === activeTab) return;
     activeTab = tab;
     document.querySelectorAll('.rail-btn').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false'));
-    if (!TABS[tab].state.loaded && !TABS[tab].state.loading) loadSheetData(tab);
+    if (!TABS[tab].state.loaded && !TABS[tab].state.loading) {
+      hydrateFromCache(tab); // paint instantly from last visit's data, if any
+      loadSheetData(tab);
+    }
     renderAll();
   });
 });
@@ -1492,7 +1598,12 @@ document.getElementById('fWorkcenter').addEventListener('change', (e) => {
   refreshCascadeOptions(activeTab);
   renderAll();
 });
-['responsible', 'substation', 'circuit'].forEach(key => {
+document.getElementById(FIELD_TO_INPUT['substation']).addEventListener('change', (e) => {
+  TABS[activeTab].filters.substation = e.target.value;
+  refreshCascadeOptions(activeTab); // narrows the circuit list to this station's codes
+  renderAll();
+});
+['responsible', 'circuit'].forEach(key => {
   document.getElementById(FIELD_TO_INPUT[key]).addEventListener('change', (e) => {
     TABS[activeTab].filters[key] = e.target.value;
     renderAll();
@@ -1521,6 +1632,7 @@ document.getElementById('moreBtn').addEventListener('click', () => {
 updateFilterVisibility(activeTab);
 populateProvinceOptions();
 loadReferenceData();
+hydrateFromCache('outage'); // instant first paint from last visit, while the real fetch runs below
 loadSheetData('outage');
 renderAll();
 </script>
