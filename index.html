@@ -68,7 +68,17 @@
     background:var(--card); border-right:1px solid var(--border);
     display:flex; flex-direction:column; align-items:stretch;
     padding:12px 6px; gap:6px; position:sticky; top:0; height:100vh;
+    overflow:hidden; box-sizing:border-box;
+    transition:width 0.22s ease, flex-basis 0.22s ease, padding 0.22s ease, border-color 0.22s ease;
   }
+  .rail.collapsed{ width:0; flex:0 0 0; padding:12px 0; border-right-color:transparent; }
+  .rail.collapsed .rail-brand, .rail.collapsed .rail-btn{ opacity:0; pointer-events:none; }
+  .sidebar-toggle{
+    background:none; border:1px solid var(--border); border-radius:10px; cursor:pointer;
+    color:var(--text-secondary); font-size:16px; width:34px; height:34px; line-height:1;
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+  }
+  .sidebar-toggle:hover{ background:var(--accent-wash); color:var(--series-1); }
   .rail-brand{ text-align:center; font-size:22px; padding:6px 0 12px; }
   .rail-btn{
     display:flex; flex-direction:column; align-items:center; gap:4px;
@@ -84,6 +94,7 @@
   main{ flex:1 1 auto; min-width:0; }
   .topbar{
     display:flex; align-items:center; justify-content:space-between; gap:12px;
+    flex-wrap:wrap; row-gap:8px;
     padding:16px 20px; border-bottom:1px solid var(--border);
     background:var(--surface-1); position:sticky; top:0; z-index:5;
   }
@@ -214,6 +225,9 @@
     .rail-brand{ font-size:18px; padding-bottom:8px; }
     .topbar h1{ font-size:15px; }
     .filters .fgroup{ min-width:calc(50% - 4px); flex:1 1 calc(50% - 4px); }
+    .refresh-btn{ padding:8px 9px; font-size:0; gap:0; }
+    .refresh-btn .spin{ font-size:13px; }
+    .refresh-btn::after{ content:attr(data-short); font-size:11.5px; margin-left:4px; }
   }
 </style>
 </head>
@@ -231,11 +245,17 @@
 
   <main>
     <div class="topbar">
-      <div>
-        <h1 id="pageTitle">สรุปเหตุการณ์ไฟฟ้าขัดข้อง</h1>
-        <div class="sub" id="lastUpdated">ยังไม่ได้โหลดข้อมูล</div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="ซ่อน/แสดงแถบเมนู" title="ซ่อน/แสดงแถบเมนู">☰</button>
+        <div>
+          <h1 id="pageTitle">สรุปเหตุการณ์ไฟฟ้าขัดข้อง</h1>
+          <div class="sub" id="lastUpdated">ยังไม่ได้โหลดข้อมูล</div>
+        </div>
       </div>
-      <button class="refresh-btn" id="refreshBtn"><span class="spin">↻</span> รีเฟรช</button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="refresh-btn" id="exportBtn" data-short="Excel"><span class="spin">⬇</span> Export Excel</button>
+        <button class="refresh-btn" id="refreshBtn" data-short="รีเฟรช"><span class="spin">↻</span> รีเฟรช</button>
+      </div>
     </div>
 
     <div class="content">
@@ -328,21 +348,6 @@
       </div>
 
       <div class="chart-grid" id="ocaChartsGrid">
-        <div class="chart-card">
-          <h3 id="trendTitle">แนวโน้มจำนวนเหตุการณ์รายวัน</h3>
-          <div class="cap">ตามช่วงวันที่และตัวกรองที่เลือก</div>
-          <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <h3 id="donutTitle">สัดส่วนตามประเภท</h3>
-          <div class="cap" id="donutCap"></div>
-          <div class="chart-wrap small"><canvas id="donutChart"></canvas></div>
-        </div>
-        <div class="chart-card full">
-          <h3 id="rankTitle">อันดับตาม กฟฟ. ที่รับผิดชอบ</h3>
-          <div class="cap">จำนวนเหตุการณ์ เรียงจากมากไปน้อย</div>
-          <div class="chart-wrap"><canvas id="rankChart"></canvas></div>
-        </div>
         <div class="chart-card full" id="ocaStatusCardWrap" style="display:none;">
           <h3>สถานะการคำนวณ OCA ตาม กฟฟ. จุดรวมงาน</h3>
           <div class="cap">จำนวนเหตุการณ์ในแต่ละจุดรวมงาน แบ่งตามว่าคำนวณ OCA แล้วหรือยัง</div>
@@ -380,11 +385,13 @@
    matching (see resolveHeaders) so small formatting differences
    in the live sheet don't break the mapping.
    ============================================================ */
+// All tabs and reference lookups now live as separate sheets inside one spreadsheet.
+const SHARED_SHEET_ID = '1qRmNp-n5Gj6PPbqmVWdA_poPuSiyyUkiMvz7Thc4BdY';
 const TABS = {
   outage: {
     key: 'outage',
-    sheetId: '1v0S_Ri2k60p-TGUGa7mk2VK3l3Fz-fe0iOqoXuequlo',
-    gid: '0',
+    sheetId: SHARED_SHEET_ID,
+    sheetName: 'ไฟขัดข้อง',
     title: 'สรุปเหตุการณ์ไฟฟ้าขัดข้อง',
     listTitle: 'รายการเหตุการณ์ไฟฟ้าขัดข้อง',
     dateHeader: 'วันที่',
@@ -406,16 +413,12 @@ const TABS = {
       operation: 'การทำงาน',
       deviceType: 'ประเภทอุปกรณ์ป้องกัน'
     },
-    availableFilters: ['province', 'workcenter', 'responsible', 'substation', 'circuit'],
-    rankField: 'responsible',
-    rankLabel: 'กฟฟ. ที่รับผิดชอบ',
-    donutField: 'eventType',
-    donutTitle: 'สัดส่วนตามประเภทเหตุการณ์'
+    availableFilters: ['province', 'workcenter', 'responsible', 'substation', 'circuit']
   },
   oca: {
     key: 'oca',
-    sheetId: '1fQwyYJIoYMoefpI8aTytvswj6FtugBsVuS3MvBANt6c',
-    gid: '2112585033',
+    sheetId: SHARED_SHEET_ID,
+    sheetName: 'OCA',
     title: 'สรุปรายงาน OCA',
     listTitle: 'รายการเหตุการณ์ OCA',
     dateHeader: 'วันที่',
@@ -431,62 +434,40 @@ const TABS = {
       graphStatus: 'กราฟ OCA',
       calcStatus: 'คิด OCA'
     },
-    availableFilters: ['workcenter', 'circuit'],
-    rankField: 'workcenter',
-    rankLabel: 'กฟฟ. จุดรวมงาน',
-    donutField: 'found',
-    donutTitle: 'สัดส่วนพบ/ไม่พบสาเหตุ'
+    availableFilters: ['province', 'workcenter', 'circuit']
   }
 };
 const FIELD_TO_INPUT = { province: 'fProvince', responsible: 'fResponsible', workcenter: 'fWorkcenter', substation: 'fSubstation', circuit: 'fCircuit' };
 
-/* Official province → work-center → responsible-office hierarchy (fixed reference
-   data, independent of what happens to be in the sheet). Used to make the
-   responsible-office dropdown a proper subset once a work center is picked. */
-const PEA_HIERARCHY = {
-  'ชัยนาท': {
-    'กฟจ.ชัยนาท': ['กฟจ.ชัยนาท', 'กฟส.สรรพยา', 'กฟส.มโนรมย์', 'กฟส.หันคา', 'กฟส.เนินขาม', 'กฟส.สรรคบุรี', 'กฟส.วัดสิงห์', 'กฟส.หนองมะโมง']
-  },
-  'นครสวรรค์': {
-    'กฟจ.นครสวรรค์': ['กฟจ.นครสวรรค์', 'กฟส.โกรกพระ', 'กฟส.เก้าเลี้ยว', 'กฟส.ท่าตะโก', 'กฟส.ไพศาลี', 'กฟส.หนองบัว', 'กฟส.ชุมแสง', 'กฟส.บรรพตพิสัย', 'กฟส.พยุหะคีรี'],
-    'กฟส.ลาดยาว': ['กฟส.ลาดยาว', 'กฟส.บ้านหนองเบน', 'กฟส.แม่วงก์', 'กฟส.ชุมตาบง', 'กฟส.แม่เปิน'],
-    'กฟส.ตาคลี': ['กฟส.ตาคลี', 'กฟส.ช่องแค', 'กฟส.หัวหวาย', 'กฟส.ตากฟ้า']
-  },
-  'สิงห์บุรี': {
-    'กฟจ.สิงห์บุรี': ['กฟจ.สิงห์บุรี', 'กฟส.บางระจัน', 'กฟส.อินทร์บุรี', 'กฟส.ค่ายบางระจัน', 'กฟส.ท่าช้าง', 'กฟส.พรหมบุรี']
-  },
-  'อุทัยธานี': {
-    'กฟจ.อุทัยธานี': ['กฟจ.อุทัยธานี', 'กฟส.ทัพทัน', 'กฟส.สว่างอารมณ์', 'กฟส.หนองขาหย่าง', 'กฟส.หนองฉาง', 'กฟส.ห้วยคต', 'กฟส.บ้านไร่', 'กฟส.เมืองการุ้ง', 'กฟส.ลานสัก']
-  },
-  'เพชรบูรณ์': {
-    'กฟจ.เพชรบูรณ์': ['กฟจ.เพชรบูรณ์', 'กฟส.วังชมภู', 'กฟส.ชนแดน', 'กฟส.เขาค้อ', 'กฟส.วังโป่ง'],
-    'กฟส.หนองไผ่': ['กฟส.หนองไผ่'],
-    'กฟส.บึงสามพัน': ['กฟส.บึงสามพัน', 'กฟส.วิเชียรบุรี', 'กฟส.พุเตย', 'กฟส.ศรีเทพ'],
-    'กฟส.หล่มสัก': ['กฟส.หล่มสัก', 'กฟส.บ้านกลาง', 'กฟส.แคมป์สน', 'กฟส.น้ำหนาว', 'กฟส.หล่มเก่า', 'กฟส.ตาดกลอย']
-  },
-  'ลพบุรี': {
-    'กฟจ.ลพบุรี': ['กฟจ.ลพบุรี', 'กฟส.ท่าวุ้ง'],
-    'กฟส.พัฒนานิคม': ['กฟส.พัฒนานิคม', 'กฟส.บ้านแก่งเสือเต้น'],
-    'กฟส.โคกสำโรง': ['กฟส.โคกสำโรง', 'กฟส.สระโบสถ์', 'กฟส.หนองม่วง', 'กฟส.โคกเจริญ', 'กฟส.บ้านหมี่'],
-    'กฟส.ชัยบาดาล': ['กฟส.ชัยบาดาล', 'กฟส.ลำสนธิ', 'กฟส.ท่าหลวง']
-  }
-};
-const PROVINCE_LIST = Object.keys(PEA_HIERARCHY);
-const WORKCENTER_TO_PROVINCE = {};
-const WORKCENTER_TO_RESPONSIBLES = {};
-Object.keys(PEA_HIERARCHY).forEach(prov => {
-  Object.keys(PEA_HIERARCHY[prov]).forEach(wc => {
-    WORKCENTER_TO_PROVINCE[wc] = prov;
-    WORKCENTER_TO_RESPONSIBLES[wc] = PEA_HIERARCHY[prov][wc];
-  });
-});
-function provinceWorkcenters(prov) { return prov ? Object.keys(PEA_HIERARCHY[prov] || {}) : []; }
-// Canonical list of every กฟฟ.จุดรวมงาน in official hierarchy order (province by province),
+/* Official province → work-center → responsible-office hierarchy. Loaded live from
+   the "Response" sheet (see loadReferenceData) rather than hardcoded, so it always
+   matches whatever the sheet says. Empty until that load completes. */
+let PEA_HIERARCHY = {};
+let PROVINCE_LIST = [];
+let WORKCENTER_TO_PROVINCE = {};
+let WORKCENTER_TO_RESPONSIBLES = {};
+// Canonical list of every กฟฟ.จุดรวมงาน in hierarchy order (province by province),
 // used so status charts always show every office - even ones with zero events right now.
-const ALL_WORKCENTERS_ORDERED = [];
-Object.keys(PEA_HIERARCHY).forEach(prov => {
-  Object.keys(PEA_HIERARCHY[prov]).forEach(wc => ALL_WORKCENTERS_ORDERED.push(wc));
-});
+let ALL_WORKCENTERS_ORDERED = [];
+// สถานีไฟฟ้า / รหัสอุปกรณ์ -> จังหวัด, loaded live from the "Province" sheet. Lets us
+// resolve a row's province directly from its station/circuit code when present,
+// falling back to the work-center hierarchy above otherwise.
+let STATION_TO_PROVINCE = {};
+let CIRCUIT_TO_PROVINCE = {};
+let referenceDataLoaded = { response: false, province: false };
+function provinceWorkcenters(prov) { return prov ? Object.keys(PEA_HIERARCHY[prov] || {}) : []; }
+function stripProvincePrefix(v) { return (v || '').toString().replace(/^จังหวัด/, '').trim(); }
+// Resolve the province for a data row: circuit code, then substation name (outage
+// tab only), then via the row's work center through the official hierarchy.
+function rowProvince(tab, row) {
+  const circuit = cellText(F(tab, row, 'circuit')).trim();
+  if (circuit && CIRCUIT_TO_PROVINCE[circuit]) return CIRCUIT_TO_PROVINCE[circuit];
+  const station = cellText(F(tab, row, 'substation')).trim();
+  if (station && STATION_TO_PROVINCE[station]) return STATION_TO_PROVINCE[station];
+  const wc = cellText(F(tab, row, 'workcenter')).trim();
+  if (wc && WORKCENTER_TO_PROVINCE[wc]) return WORKCENTER_TO_PROVINCE[wc];
+  return '';
+}
 
 function todayRange() {
   const from = new Date(); from.setHours(0, 0, 0, 0);
@@ -501,18 +482,15 @@ Object.keys(TABS).forEach(k => {
 let activeTab = 'outage';
 const chartInstances = {};
 
-/* ---------------- data loading (JSONP via Google Visualization API) ---------------- */
-function loadSheetData(tab) {
-  const cfg = TABS[tab];
-  if (cfg.state.loading) return;
-  cfg.state.loading = true;
-  cfg.state.error = null;
-  if (activeTab === tab) renderAll();
-
-  const cbName = 'gvizCB_' + tab + '_' + Date.now();
+/* ---------------- data loading (JSONP via Google Visualization API) ----------------
+   Every sheet - the two data tabs plus the Province/Response lookup sheets - lives
+   in one spreadsheet now, addressed by sheet NAME (the gviz endpoint accepts
+   &sheet=<name> as an alternative to &gid=<id>), so no gid needs to be looked up. */
+function fetchGvizJsonp(sheetId, sheetName, onSuccess, onError) {
+  const cbName = 'gvizCB_' + Math.random().toString(36).slice(2) + Date.now();
   let done = false;
   const timeoutId = setTimeout(() => {
-    if (!done) { done = true; cleanup(); handleError(tab, new Error('หมดเวลาเชื่อมต่อ Google Sheets')); }
+    if (!done) { done = true; cleanup(); onError(new Error('หมดเวลาเชื่อมต่อ Google Sheets')); }
   }, 15000);
 
   function cleanup() {
@@ -529,38 +507,104 @@ function loadSheetData(tab) {
     try {
       if (!resp || !resp.table) throw new Error('รูปแบบข้อมูลไม่ถูกต้อง');
       const cols = resp.table.cols.map((c, i) => (c.label && String(c.label).trim()) ? String(c.label).trim() : ('col' + i));
-      const rows = resp.table.rows.map(r => {
+      const rows = (resp.table.rows || []).map(r => {
         const obj = {};
         cols.forEach((h, i) => { obj[h] = (r.c && r.c[i]) || null; });
         return obj;
       });
-      cfg.state.cols = cols;
-      cfg.state.rows = rows;
-      cfg.state.loading = false;
-      cfg.state.loaded = true;
-      cfg.state.error = null;
-      cfg.state.lastFetch = new Date();
-      resolveHeaders(tab);
-      populateFilterOptions(tab);
-      if (activeTab === tab) renderAll();
+      onSuccess({ cols, rows });
     } catch (e) {
-      handleError(tab, e);
+      onError(e);
     }
   };
 
   const script = document.createElement('script');
   script.id = cbName;
-  script.src = 'https://docs.google.com/spreadsheets/d/' + cfg.sheetId + '/gviz/tq?gid=' + cfg.gid + '&headers=1&tqx=out:json;responseHandler:' + cbName;
+  script.src = 'https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?sheet=' + encodeURIComponent(sheetName) + '&headers=1&tqx=out:json;responseHandler:' + cbName;
   script.onerror = function () {
-    if (!done) { done = true; cleanup(); handleError(tab, new Error('ไม่สามารถเชื่อมต่อ Google Sheets ได้ (ตรวจสอบสิทธิ์การแชร์แบบ "ทุกคนที่มีลิงก์ดูได้")')); }
+    if (!done) { done = true; cleanup(); onError(new Error('ไม่สามารถเชื่อมต่อ Google Sheets ได้ (ตรวจสอบสิทธิ์การแชร์แบบ "ทุกคนที่มีลิงก์ดูได้")')); }
   };
   document.head.appendChild(script);
+}
+
+function loadSheetData(tab) {
+  const cfg = TABS[tab];
+  if (cfg.state.loading) return;
+  cfg.state.loading = true;
+  cfg.state.error = null;
+  if (activeTab === tab) renderAll();
+  fetchGvizJsonp(cfg.sheetId, cfg.sheetName, function (result) {
+    cfg.state.cols = result.cols;
+    cfg.state.rows = result.rows;
+    cfg.state.loading = false;
+    cfg.state.loaded = true;
+    cfg.state.error = null;
+    cfg.state.lastFetch = new Date();
+    resolveHeaders(tab);
+    populateFilterOptions(tab);
+    if (activeTab === tab) renderAll();
+  }, function (err) { handleError(tab, err); });
 }
 
 function handleError(tab, err) {
   TABS[tab].state.loading = false;
   TABS[tab].state.error = (err && err.message) ? err.message : String(err);
   if (activeTab === tab) renderAll();
+}
+
+/* ---------------- reference lookups: Province & Response sheets ----------------
+   Loaded once (independent of the two data tabs) to build the live province ->
+   work-center -> responsible-office hierarchy and the station/circuit -> province
+   lookup, replacing what used to be hardcoded. */
+function loadReferenceData() {
+  fetchGvizJsonp(SHARED_SHEET_ID, 'Response', function (result) {
+    const cols = result.cols;
+    const hier = {};
+    result.rows.forEach(row => {
+      const provRaw = cellText(row[cols[0]]).trim();
+      const wc = cellText(row[cols[1]]).trim();
+      const resp = cellText(row[cols[2]]).trim();
+      const prov = stripProvincePrefix(provRaw);
+      if (!prov || !wc || !resp) return;
+      if (!hier[prov]) hier[prov] = {};
+      if (!hier[prov][wc]) hier[prov][wc] = [];
+      if (!hier[prov][wc].includes(resp)) hier[prov][wc].push(resp);
+    });
+    PEA_HIERARCHY = hier;
+    PROVINCE_LIST = Object.keys(PEA_HIERARCHY);
+    const wc2prov = {}, wc2resp = {}, ordered = [];
+    Object.keys(PEA_HIERARCHY).forEach(prov => {
+      Object.keys(PEA_HIERARCHY[prov]).forEach(wc => {
+        wc2prov[wc] = prov;
+        wc2resp[wc] = PEA_HIERARCHY[prov][wc];
+        ordered.push(wc);
+      });
+    });
+    WORKCENTER_TO_PROVINCE = wc2prov;
+    WORKCENTER_TO_RESPONSIBLES = wc2resp;
+    ALL_WORKCENTERS_ORDERED = ordered;
+    referenceDataLoaded.response = true;
+    populateProvinceOptions();
+    Object.keys(TABS).forEach(t => { if (TABS[t].state.loaded) refreshCascadeOptions(t); });
+    renderAll();
+  }, function (err) { console.error('โหลดชีต Response ไม่สำเร็จ', err); });
+
+  fetchGvizJsonp(SHARED_SHEET_ID, 'Province', function (result) {
+    const cols = result.cols;
+    const stMap = {}, circMap = {};
+    result.rows.forEach(row => {
+      const station = cellText(row[cols[0]]).trim();
+      const circuit = cellText(row[cols[1]]).trim();
+      const prov = cellText(row[cols[2]]).trim();
+      if (!prov) return;
+      if (circuit && !circMap[circuit]) circMap[circuit] = prov;
+      if (station && !stMap[station]) stMap[station] = prov;
+    });
+    STATION_TO_PROVINCE = stMap;
+    CIRCUIT_TO_PROVINCE = circMap;
+    referenceDataLoaded.province = true;
+    renderAll();
+  }, function (err) { console.error('โหลดชีต Province ไม่สำเร็จ', err); });
 }
 
 /* ---------------- header resolution (whitespace/quote tolerant) ---------------- */
@@ -706,8 +750,7 @@ function getFilteredRows(tab) {
       if (val) { if (cellText(F(tab, row, key)).trim() !== val) return false; }
     }
     if (f.province) {
-      const wcVal = cellText(F(tab, row, 'workcenter')).trim();
-      if (WORKCENTER_TO_PROVINCE[wcVal] !== f.province) return false;
+      if (rowProvince(tab, row) !== f.province) return false;
     }
     if (tab === 'oca' && f.pendingOnly) {
       if (classifyCalcStatus(cellText(F(tab, row, 'calcStatus'))) !== 'pending') return false;
@@ -842,104 +885,6 @@ function chartLibReady(canvasId, wrapEl) {
   if (typeof Chart !== 'undefined') return true;
   setChartEmpty(canvasId, wrapEl, true, 'ไม่สามารถโหลดไลบรารีกราฟได้ (ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต)');
   return false;
-}
-function renderTrendChart(tab, rows) {
-  const canvas = document.getElementById('trendChart');
-  const wrap = canvas.parentElement;
-  if (!chartLibReady('trendChart', wrap)) return;
-  const dated = rows.map(r => cellDate(D(tab, r))).filter(Boolean);
-  if (dated.length === 0) { destroyChart('trend'); setChartEmpty('trendChart', wrap, true); return; }
-  setChartEmpty('trendChart', wrap, false);
-  const counts = new Map();
-  dated.forEach(d => { const key = toDateInputValue(d); counts.set(key, (counts.get(key) || 0) + 1); });
-  let keys = Array.from(counts.keys()).sort();
-  let labels, data;
-  if (keys.length > 45) {
-    const wk = new Map();
-    keys.forEach(k => {
-      const dt = new Date(k + 'T00:00:00');
-      const monday = new Date(dt); monday.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
-      const wkKey = monday.toLocaleDateString('th-TH', { day: '2-digit', month: 'short' });
-      wk.set(wkKey, (wk.get(wkKey) || 0) + counts.get(k));
-    });
-    labels = Array.from(wk.keys()); data = labels.map(l => wk.get(l));
-  } else {
-    labels = keys.map(k => new Date(k + 'T00:00:00').toLocaleDateString('th-TH', { day: '2-digit', month: 'short' }));
-    data = keys.map(k => counts.get(k));
-  }
-  destroyChart('trend');
-  chartInstances.trend = new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data: { labels, datasets: [{ data, borderColor: cssVar('--series-1'), backgroundColor: hexToRgba(cssVar('--series-1'), 0.14), fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, borderWidth: 2 }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: cssVar('--text-muted'), maxRotation: 0, autoSkip: true, font: FONT } },
-        y: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } }
-      }
-    }
-  });
-}
-
-function renderDonutChart(tab, rows) {
-  const cfg = TABS[tab];
-  document.getElementById('donutTitle').textContent = cfg.donutTitle;
-  const canvas = document.getElementById('donutChart');
-  const wrap = canvas.parentElement;
-  if (!chartLibReady('donutChart', wrap)) return;
-  if (rows.length === 0) { destroyChart('donut'); setChartEmpty('donutChart', wrap, true); return; }
-  const counts = new Map();
-  rows.forEach(r => { let v = cellText(F(tab, r, cfg.donutField)).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
-  let entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  const maxSlices = 6;
-  if (entries.length > maxSlices) {
-    const top = entries.slice(0, maxSlices - 1);
-    const restSum = entries.slice(maxSlices - 1).reduce((s, e) => s + e[1], 0);
-    entries = top.concat([['อื่นๆ', restSum]]);
-  }
-  setChartEmpty('donutChart', wrap, false);
-  const colors = entries.map((_, i) => cssVar(PALETTE_VARS[i % PALETTE_VARS.length]));
-  destroyChart('donut');
-  chartInstances.donut = new Chart(canvas.getContext('2d'), {
-    type: 'doughnut',
-    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: colors, borderColor: cssVar('--card'), borderWidth: 2 }] },
-    options: {
-      responsive: true, maintainAspectRatio: false, cutout: '62%',
-      plugins: {
-        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10, generateLabels: donutLegendLabels } },
-        tooltip: { callbacks: { label: (item) => { const total = item.dataset.data.reduce((a, b) => a + b, 0); const pct = total ? Math.round(item.parsed / total * 100) : 0; return ' ' + item.label + ': ' + item.formattedValue + ' (' + pct + '%)'; } } }
-      }
-    }
-  });
-}
-
-function renderRankChart(tab, rows) {
-  const cfg = TABS[tab];
-  document.getElementById('rankTitle').textContent = 'อันดับตาม ' + cfg.rankLabel;
-  const canvas = document.getElementById('rankChart');
-  const wrap = canvas.parentElement;
-  if (!chartLibReady('rankChart', wrap)) return;
-  if (rows.length === 0) { destroyChart('rank'); setChartEmpty('rankChart', wrap, true); return; }
-  const counts = new Map();
-  rows.forEach(r => { let v = cellText(F(tab, r, cfg.rankField)).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
-  let entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  setChartEmpty('rankChart', wrap, false);
-  destroyChart('rank');
-  chartInstances.rank = new Chart(canvas.getContext('2d'), {
-    type: 'bar',
-    plugins: [valueLabelsPlugin],
-    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-1'), borderRadius: 4, maxBarThickness: 26 }] },
-    options: {
-      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
-      scales: {
-        x: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
-        y: { grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } } }
-      }
-    }
-  });
 }
 
 function classifyCalcStatus(text) {
@@ -1211,27 +1156,32 @@ function populateFilterOptions(tab) {
     const values = Array.from(dataValues(tab, key)).sort((a, b) => a.localeCompare(b, 'th'));
     fillSelectOptions(FIELD_TO_INPUT[key], values, document.getElementById(FIELD_TO_INPUT[key]).value);
   });
-  if (tab === 'outage') { populateProvinceOptions(); refreshCascadeOptions(tab); }
+  if (effectiveAvailable(tab).includes('province')) { populateProvinceOptions(); refreshCascadeOptions(tab); }
 }
 function populateProvinceOptions() {
   const sel = document.getElementById('fProvince'); if (!sel) return;
   fillSelectOptions('fProvince', PROVINCE_LIST, sel.value);
 }
 function refreshCascadeOptions(tab) {
-  if (tab !== 'outage') return;
   const cfg = TABS[tab]; const f = cfg.filters;
-  const dataWc = dataValues(tab, 'workcenter');
-  let wcOptions;
-  if (f.province) {
-    const provWcs = provinceWorkcenters(f.province);
-    const inData = provWcs.filter(wc => dataWc.has(wc));
-    wcOptions = inData.length ? inData : provWcs;
-  } else {
-    wcOptions = Array.from(dataWc).sort((a, b) => a.localeCompare(b, 'th'));
-  }
-  fillSelectOptions('fWorkcenter', wcOptions, f.workcenter);
-  if (!wcOptions.includes(f.workcenter)) f.workcenter = '';
+  const avail = effectiveAvailable(tab);
+  if (!avail.includes('province')) return;
 
+  if (avail.includes('workcenter')) {
+    const dataWc = dataValues(tab, 'workcenter');
+    let wcOptions;
+    if (f.province) {
+      const provWcs = provinceWorkcenters(f.province);
+      const inData = provWcs.filter(wc => dataWc.has(wc));
+      wcOptions = inData.length ? inData : provWcs;
+    } else {
+      wcOptions = Array.from(dataWc).sort((a, b) => a.localeCompare(b, 'th'));
+    }
+    fillSelectOptions('fWorkcenter', wcOptions, f.workcenter);
+    if (!wcOptions.includes(f.workcenter)) f.workcenter = '';
+  }
+
+  if (!avail.includes('responsible')) return;
   const dataResp = dataValues(tab, 'responsible');
   let respOptions;
   if (f.workcenter && WORKCENTER_TO_RESPONSIBLES[f.workcenter]) {
@@ -1287,7 +1237,7 @@ function renderBanners() {
   updateRefreshBtn();
 }
 const OUTAGE_CHART_IDS = ['deviceTypeChart', 'operationChart', 'causeKnownChart', 'causeCategoryChart'];
-const OCA_CHART_IDS = ['trendChart', 'donutChart', 'rankChart', 'ocaStatusChart'];
+const OCA_CHART_IDS = ['ocaStatusChart'];
 function renderEmptyPlaceholders() {
   const grid = document.getElementById('kpiGrid'); while (grid.firstChild) grid.removeChild(grid.firstChild);
   document.getElementById('outageChartsGrid').style.display = activeTab === 'outage' ? '' : 'none';
@@ -1326,9 +1276,6 @@ function renderAll() {
     try { renderCauseKnownChart(tab, rows); } catch (e) { console.error('cause known chart', e); }
     try { renderCauseCategoryChart(tab, rows); } catch (e) { console.error('cause category chart', e); }
   } else {
-    try { renderTrendChart(tab, rows); } catch (e) { console.error('trend chart', e); }
-    try { renderDonutChart(tab, rows); } catch (e) { console.error('donut chart', e); }
-    try { renderRankChart(tab, rows); } catch (e) { console.error('rank chart', e); }
     const statusWrap = document.getElementById('ocaStatusCardWrap');
     const canCalcStatus = cfg.state.fieldCols && cfg.state.fieldCols.calcStatus;
     statusWrap.style.display = canCalcStatus ? '' : 'none';
@@ -1338,6 +1285,166 @@ function renderAll() {
   renderList(tab, rows);
   updateFilterCount(tab);
 }
+
+/* ---------------- minimal in-browser XLSX writer (no dependencies) ----------------
+   Builds a valid, uncompressed (STORED) .xlsx with just enough OOXML parts for
+   Excel/Sheets to open a single sheet of text cells - enough for "export the
+   filtered rows" without pulling in a full spreadsheet library. */
+function crc32(bytes) {
+  let c, crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) {
+    c = (crc ^ bytes[i]) & 0xFF;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    crc = (crc >>> 8) ^ c;
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function strToBytes(str) { return new TextEncoder().encode(str); }
+function xmlEscape(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[ch]));
+}
+function colLetter(n) {
+  let s = ''; n++;
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+function buildXlsxSheetXml(rows) {
+  let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+  rows.forEach((row, r) => {
+    xml += '<row r="' + (r + 1) + '">';
+    row.forEach((val, c) => {
+      const ref = colLetter(c) + (r + 1);
+      xml += '<c r="' + ref + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEscape(val) + '</t></is></c>';
+    });
+    xml += '</row>';
+  });
+  xml += '</sheetData></worksheet>';
+  return xml;
+}
+function makeZip(files) {
+  const chunks = []; const central = []; let offset = 0;
+  files.forEach(f => {
+    const nameBytes = strToBytes(f.name);
+    const data = f.data;
+    const crc = crc32(data);
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const dv = new DataView(localHeader.buffer);
+    dv.setUint32(0, 0x04034b50, true); dv.setUint16(4, 20, true); dv.setUint16(6, 0, true);
+    dv.setUint16(8, 0, true); dv.setUint16(10, 0, true); dv.setUint16(12, 0, true);
+    dv.setUint32(14, crc, true); dv.setUint32(18, data.length, true); dv.setUint32(22, data.length, true);
+    dv.setUint16(26, nameBytes.length, true); dv.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+    chunks.push(localHeader, data);
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const cdv = new DataView(centralHeader.buffer);
+    cdv.setUint32(0, 0x02014b50, true); cdv.setUint16(4, 20, true); cdv.setUint16(6, 20, true);
+    cdv.setUint16(8, 0, true); cdv.setUint16(10, 0, true); cdv.setUint16(12, 0, true); cdv.setUint16(14, 0, true);
+    cdv.setUint32(16, crc, true); cdv.setUint32(20, data.length, true); cdv.setUint32(24, data.length, true);
+    cdv.setUint16(28, nameBytes.length, true); cdv.setUint16(30, 0, true); cdv.setUint16(32, 0, true);
+    cdv.setUint16(34, 0, true); cdv.setUint16(36, 0, true); cdv.setUint32(38, 0, true);
+    cdv.setUint32(42, offset, true);
+    centralHeader.set(nameBytes, 46);
+    central.push(centralHeader);
+    offset += localHeader.length + data.length;
+  });
+  const centralStart = offset;
+  let centralSize = 0;
+  central.forEach(c => { chunks.push(c); centralSize += c.length; offset += c.length; });
+  const end = new Uint8Array(22);
+  const edv = new DataView(end.buffer);
+  edv.setUint32(0, 0x06054b50, true); edv.setUint16(4, 0, true); edv.setUint16(6, 0, true);
+  edv.setUint16(8, files.length, true); edv.setUint16(10, files.length, true);
+  edv.setUint32(12, centralSize, true); edv.setUint32(16, centralStart, true); edv.setUint16(20, 0, true);
+  chunks.push(end);
+  let total = 0; chunks.forEach(c => total += c.length);
+  const out = new Uint8Array(total);
+  let p = 0; chunks.forEach(c => { out.set(c, p); p += c.length; });
+  return out;
+}
+function exportRowsToXlsx(filename, sheetName, rows) {
+  const contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+    '</Types>';
+  const rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    '</Relationships>';
+  const workbookXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheets><sheet name="' + xmlEscape(sheetName).slice(0, 31) + '" sheetId="1" r:id="rId1"/></sheets></workbook>';
+  const workbookRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+    '</Relationships>';
+  const sheetXml = buildXlsxSheetXml(rows);
+  const files = [
+    { name: '[Content_Types].xml', data: strToBytes(contentTypes) },
+    { name: '_rels/.rels', data: strToBytes(rootRels) },
+    { name: 'xl/workbook.xml', data: strToBytes(workbookXml) },
+    { name: 'xl/_rels/workbook.xml.rels', data: strToBytes(workbookRels) },
+    { name: 'xl/worksheets/sheet1.xml', data: strToBytes(sheetXml) }
+  ];
+  const zipBytes = makeZip(files);
+  const blob = new Blob([zipBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function currentExportColumns(tab) {
+  const dateCell = r => { const d = cellDate(D(tab, r)); return d ? d.toLocaleDateString('th-TH') : ''; };
+  if (tab === 'outage') {
+    return [
+      ['วันที่', dateCell],
+      ['เวลา', r => cellText(Tm(tab, r))],
+      ['สถานีไฟฟ้า', r => cellText(F(tab, r, 'substation'))],
+      ['รหัสอุปกรณ์', r => cellText(F(tab, r, 'circuit'))],
+      ['กฟฟ.จุดรวมงาน', r => cellText(F(tab, r, 'workcenter'))],
+      ['กฟฟ.ที่รับผิดชอบ', r => cellText(F(tab, r, 'responsible'))],
+      ['ประเภทอุปกรณ์ป้องกัน', r => cellText(F(tab, r, 'deviceType'))],
+      ['การทำงาน', r => cellText(F(tab, r, 'operation'))],
+      ['ทราบ/ไม่ทราบสาเหตุ', r => cellText(F(tab, r, 'causeKnown'))],
+      ['สาเหตุ', r => cellText(F(tab, r, 'cause'))],
+      ['ประเภทสาเหตุ', r => cellText(F(tab, r, 'causeCategory'))],
+      ['ระยะเวลาไฟดับ', r => formatMinutes(cellDurationMinutes(F(tab, r, 'duration')))],
+      ['ประเภทเหตุการณ์', r => cellText(F(tab, r, 'eventType'))]
+    ];
+  }
+  return [
+    ['วันที่', dateCell],
+    ['เวลา', r => cellText(Tm(tab, r))],
+    ['รหัสอุปกรณ์', r => cellText(F(tab, r, 'circuit'))],
+    ['กฟฟ.จุดรวมงาน', r => cellText(F(tab, r, 'workcenter'))],
+    ['พบ/ไม่พบ', r => cellText(F(tab, r, 'found'))],
+    ['สาเหตุ', r => cellText(F(tab, r, 'cause'))],
+    ['ประเภทสาเหตุ', r => cellText(F(tab, r, 'causeCategory'))],
+    ['คิด OCA', r => cellText(F(tab, r, 'calcStatus'))]
+  ];
+}
+
+/* ---------------- sidebar collapse ---------------- */
+(function () {
+  const rail = document.querySelector('.rail');
+  const toggle = document.getElementById('sidebarToggle');
+  let collapsed = false;
+  try {
+    const saved = localStorage.getItem('railCollapsed');
+    collapsed = saved !== null ? saved === '1' : window.innerWidth < 640;
+  } catch (e) { collapsed = window.innerWidth < 640; }
+  function apply() { rail.classList.toggle('collapsed', collapsed); }
+  apply();
+  toggle.addEventListener('click', () => {
+    collapsed = !collapsed;
+    apply();
+    try { localStorage.setItem('railCollapsed', collapsed ? '1' : '0'); } catch (e) { /* ignore */ }
+  });
+})();
 
 /* ---------------- wire up events ---------------- */
 document.querySelectorAll('.rail-btn').forEach(btn => {
@@ -1351,6 +1458,17 @@ document.querySelectorAll('.rail-btn').forEach(btn => {
   });
 });
 document.getElementById('refreshBtn').addEventListener('click', () => loadSheetData(activeTab));
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const tab = activeTab, cfg = TABS[tab];
+  if (!cfg.state.loaded) return;
+  const rows = getFilteredRows(tab);
+  const columns = currentExportColumns(tab);
+  const table = [columns.map(c => c[0])];
+  rows.forEach(r => table.push(columns.map(c => c[1](r))));
+  const stamp = toDateInputValue(new Date());
+  const filename = (tab === 'outage' ? 'เหตุการณ์ไฟฟ้าขัดข้อง' : 'รายงาน_OCA') + '_' + stamp + '.xlsx';
+  exportRowsToXlsx(filename, tab === 'outage' ? 'Outage' : 'OCA', table);
+});
 document.querySelectorAll('.preset-chip').forEach(btn => {
   btn.addEventListener('click', () => { applyPreset(activeTab, btn.dataset.preset); renderAll(); });
 });
@@ -1402,6 +1520,7 @@ document.getElementById('moreBtn').addEventListener('click', () => {
 /* ---------------- init ---------------- */
 updateFilterVisibility(activeTab);
 populateProvinceOptions();
+loadReferenceData();
 loadSheetData('outage');
 renderAll();
 </script>
