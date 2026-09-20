@@ -237,6 +237,12 @@
     background:var(--card); border:1px solid var(--border); border-radius:12px;
     padding:12px 13px; box-shadow:var(--shadow);
   }
+  .ev-card.tl-alert{
+    border:3px solid transparent; border-radius:12px; padding:10px 11px;
+    background:
+      linear-gradient(var(--card), var(--card)) padding-box,
+      repeating-linear-gradient(45deg, rgba(208,59,59,0.45) 0 5px, rgba(208,59,59,0.14) 5px 10px) border-box;
+  }
   .ev-top{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
   .ev-title{ font-size:13.5px; font-weight:700; }
   .ev-when{ font-size:11.5px; color:var(--text-muted); white-space:nowrap; }
@@ -862,6 +868,8 @@ function getFilteredRows(tab) {
       const { field, value } = f.chartFilter;
       if (field === 'causeKnown') {
         if (classifyCauseKnown(cellText(F(tab, row, 'causeKnown'))) !== value) return false;
+      } else if (field === 'operation') {
+        if (classifyTRTL(cellText(F(tab, row, 'operation'))) !== value) return false;
       } else {
         let v = cellText(F(tab, row, field)).trim(); if (!v) v = 'ไม่ระบุ';
         if (v !== value) return false;
@@ -1163,6 +1171,16 @@ function classifyCauseKnown(text) {
   if (!t) return null;
   return /ไม่ทราบ|✗|false|no/i.test(t) ? 'ไม่ทราบสาเหตุ' : 'ทราบสาเหตุ';
 }
+// การทำงาน column holds values like "T/R1", "T/R2", "T/L", "TR1", "TL", etc. -
+// group them down to just T/R or T/L (the distinction that actually matters:
+// T/L means the breaker locked out, which is why it gets a red-hatch highlight).
+function classifyTRTL(text) {
+  const t = (text || '').toUpperCase();
+  if (!t) return '';
+  if (/T\s*\/?\s*L/.test(t)) return 'T/L';
+  if (/T\s*\/?\s*R/.test(t)) return 'T/R';
+  return '';
+}
 function renderDeviceTypeChart(tab, rows) {
   const canvas = document.getElementById('deviceTypeChart'); const wrap = canvas.parentElement;
   if (!chartLibReady('deviceTypeChart', wrap)) return;
@@ -1191,18 +1209,16 @@ function renderDeviceTypeChart(tab, rows) {
 function renderOperationChart(tab, rows) {
   const canvas = document.getElementById('operationChart'); const wrap = canvas.parentElement;
   if (!chartLibReady('operationChart', wrap)) return;
+  // Group down to just T/R or T/L (see classifyTRTL) - the raw column can hold
+  // T/R1, T/R2, T/L, etc. but the meaningful split for this chart is R vs L.
   const counts = new Map();
-  rows.forEach(r => { let v = cellText(F(tab, r, 'operation')).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
+  rows.forEach(r => { let v = classifyTRTL(cellText(F(tab, r, 'operation'))); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
   if (counts.size === 0) { destroyChart('operation'); setChartEmpty('operationChart', wrap, true); return; }
-  let entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  const maxSlices = 6;
-  if (entries.length > maxSlices) {
-    const top = entries.slice(0, maxSlices - 1);
-    const rest = entries.slice(maxSlices - 1).reduce((s, e) => s + e[1], 0);
-    entries = top.concat([['อื่นๆ', rest]]);
-  }
+  const order = ['T/R', 'T/L', 'ไม่ระบุ'];
+  const entries = order.filter(k => counts.has(k)).map(k => [k, counts.get(k)]);
   setChartEmpty('operationChart', wrap, false);
-  const colors = entries.map((_, i) => cssVar(PALETTE_VARS[i % PALETTE_VARS.length]));
+  const colorMap = { 'T/R': cssVar('--series-1'), 'T/L': cssVar('--critical'), 'ไม่ระบุ': cssVar('--text-muted') };
+  const colors = entries.map(e => colorMap[e[0]]);
   destroyChart('operation');
   chartInstances.operation = new Chart(canvas.getContext('2d'), {
     type: 'doughnut',
@@ -1288,9 +1304,11 @@ function buildEventCard(tab, row) {
   const tags = document.createElement('div'); tags.className = 'ev-tags';
   function addTag(text, cls) { if (!text) return; const t = document.createElement('span'); t.className = 'tag' + (cls ? (' ' + cls) : ''); t.textContent = text; tags.appendChild(t); }
 
+  let trtlClass = '';
   if (tab === 'outage') {
     const etype = cellText(F(tab, row, 'eventType')); if (etype) addTag(etype, /major|ใหญ่|รุนแรง/i.test(etype) ? 'status-bad' : '');
-    const trtl = cellText(F(tab, row, 'trtl')); addTag(trtl);
+    const trtl = classifyTRTL(cellText(F(tab, row, 'operation')));
+    if (trtl) { addTag(trtl, trtl === 'T/L' ? 'status-bad' : ''); if (trtl === 'T/L') trtlClass = 'tl-alert'; }
     const known = cellText(F(tab, row, 'causeKnown'));
     if (known) { const bad = /ไม่ทราบ|✗|false|no/i.test(known); addTag(bad ? 'ไม่ทราบสาเหตุ' : 'ทราบสาเหตุ', bad ? 'status-bad' : 'status-good'); }
     addTag(cellText(F(tab, row, 'weather')));
@@ -1320,6 +1338,7 @@ function buildEventCard(tab, row) {
 
   const cause = cellText(F(tab, row, 'cause'));
   if (cause) { const c = document.createElement('div'); c.className = 'ev-cause'; const b = document.createElement('b'); b.textContent = 'สาเหตุ: '; c.appendChild(b); c.appendChild(document.createTextNode(cause)); card.appendChild(c); }
+  if (trtlClass) card.classList.add(trtlClass);
   return card;
 }
 function renderList(tab, rows) {
