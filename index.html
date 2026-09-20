@@ -1125,14 +1125,26 @@ function renderOcaStatusChart(tab, rows) {
           // Measure the actual longest label and force at least that much room,
           // capped so the bars themselves always keep some space too.
           afterFit(scale) {
+            const labels = (scale.chart.data.labels || []).map(String);
+            let maxLen = 0;
+            labels.forEach(lbl => { if (lbl.length > maxLen) maxLen = lbl.length; });
+            // Mobile Safari/WebKit (iPhone, iPad) has a long-standing quirk where a
+            // custom web font that renders fine in ordinary page text is not yet
+            // "warmed up" for Canvas 2D text - ctx.measureText() silently falls back
+            // to a narrow placeholder-glyph metric, even after document.fonts.ready
+            // resolves. That made the measured width unreliable on phones/tablets
+            // specifically (desktop Chrome/Edge don't have this quirk), so on top of
+            // measuring, also compute a character-count-based estimate that doesn't
+            // depend on the font having loaded at all, and reserve whichever is larger.
+            const estByChars = maxLen * 9.5 + 20;
             const ctx = scale.ctx;
             ctx.save();
             ctx.font = "11px 'Noto Sans Thai', sans-serif";
             let maxW = 0;
-            (scale.chart.data.labels || []).forEach(lbl => { const w = ctx.measureText(String(lbl)).width; if (w > maxW) maxW = w; });
+            labels.forEach(lbl => { const w = ctx.measureText(lbl).width; if (w > maxW) maxW = w; });
             ctx.restore();
-            const desired = Math.ceil(maxW) + 14;
-            const cap = Math.max(80, scale.chart.width * 0.52);
+            const desired = Math.max(Math.ceil(maxW) + 14, estByChars);
+            const cap = Math.max(90, scale.chart.width * 0.55);
             scale.width = Math.min(Math.max(desired, 80), cap);
           }
         }
