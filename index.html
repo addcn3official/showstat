@@ -487,7 +487,7 @@ function todayRange() {
 }
 Object.keys(TABS).forEach(k => {
   const r = todayRange();
-  TABS[k].filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false, doneOnly: false };
+  TABS[k].filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false, doneOnly: false, chartFilter: null };
   TABS[k].state = { cols: null, rows: [], loading: false, loaded: false, error: null, lastFetch: null, listLimit: 20, fieldCols: null, dateCol: null, timeCol: null, usingCache: false, cachedAt: null };
 });
 let activeTab = 'outage';
@@ -814,6 +814,15 @@ function getFilteredRows(tab) {
     if (tab === 'oca' && f.doneOnly) {
       if (classifyCalcStatus(cellText(F(tab, row, 'calcStatus'))) !== 'done') return false;
     }
+    if (f.chartFilter) {
+      const { field, value } = f.chartFilter;
+      if (field === 'causeKnown') {
+        if (classifyCauseKnown(cellText(F(tab, row, 'causeKnown'))) !== value) return false;
+      } else {
+        let v = cellText(F(tab, row, field)).trim(); if (!v) v = 'ไม่ระบุ';
+        if (v !== value) return false;
+      }
+    }
     return true;
   });
 }
@@ -961,10 +970,50 @@ function toggleOcaCalcStatusFilter(key) {
   } else {
     f.pendingOnly = !f.pendingOnly; if (f.pendingOnly) f.doneOnly = false;
   }
-  renderAll();
+  // Deferred: renderAll() destroys and recreates this very chart, and doing that
+  // synchronously from inside its own click handler fights with Chart.js's own
+  // internal event dispatch (legend/tooltip plugins still processing the same
+  // click), throwing a console error. Let that finish first.
+  setTimeout(renderAll, 0);
 }
 function onOcaLegendClick(evt, legendItem) {
   toggleOcaCalcStatusFilter(legendItem.datasetIndex === 0 ? 'done' : 'pending');
+}
+
+// Generic click-to-filter for the outage-tab breakdown charts (device type, operation,
+// cause known/unknown, cause category): clicking a bar or a donut slice (or its legend
+// entry) isolates that one value everywhere on the page - KPIs, the other charts, and
+// the event list below. Clicking the same value again clears it back to showing all.
+function toggleChartFieldFilter(tab, field, value) {
+  if (!value || value === 'อื่นๆ') return; // aggregated "other" bucket has no single value to filter by
+  const f = TABS[tab].filters;
+  if (f.chartFilter && f.chartFilter.field === field && f.chartFilter.value === value) {
+    f.chartFilter = null;
+  } else {
+    f.chartFilter = { field, value };
+  }
+  setTimeout(renderAll, 0);
+}
+// Reusable Chart.js onClick: figures out which bar/slice was actually tapped
+// (via intersect:true, same fix as the OCA status chart) and filters by its label.
+function chartFieldClickHandler(tab, field) {
+  return (evt, elements, chart) => {
+    const hit = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+    if (!hit.length) return;
+    const label = chart.data.labels[hit[0].index];
+    toggleChartFieldFilter(tab, field, label);
+  };
+}
+function chartFieldLegendClickHandler(tab, field) {
+  return (evt, legendItem, legend) => {
+    const label = legend.chart.data.labels[legendItem.index];
+    toggleChartFieldFilter(tab, field, label);
+  };
+}
+// Shows a pointer cursor while hovering a clickable bar/slice, so it's discoverable
+// that these charts can be clicked to filter.
+function chartHoverCursor(evt, elements) {
+  evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
 }
 function renderOcaStatusChart(tab, rows) {
   const canvas = document.getElementById('ocaStatusChart');
@@ -1001,11 +1050,18 @@ function renderOcaStatusChart(tab, rows) {
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      onClick: (evt, elements) => {
-        if (!elements.length) return;
-        const key = elements[0].datasetIndex === 0 ? 'done' : 'pending';
+      onClick: (evt, elements, chart) => {
+        // The chart's hover/tooltip interaction mode is 'index' (whole-row), which
+        // always reports the "OCA" (done) dataset first regardless of which colored
+        // segment was actually tapped - so a tap on the orange "pending" part could
+        // wrongly be read as "done". Re-query with intersect:true to find the exact
+        // segment under the pointer instead of trusting the passed-in elements list.
+        const hit = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+        if (!hit.length) return;
+        const key = hit[0].datasetIndex === 0 ? 'done' : 'pending';
         toggleOcaCalcStatusFilter(key);
       },
+      onHover: chartHoverCursor,
       plugins: {
         legend: {
           position: 'bottom', onClick: onOcaLegendClick,
@@ -1029,7 +1085,24 @@ function renderOcaStatusChart(tab, rows) {
       },
       scales: {
         x: { stacked: true, beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
-        y: { stacked: true, grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } } }
+        y: {
+          stacked: true, grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } },
+          // On narrow phone screens Chart.js can end up reserving too little width
+          // for this axis and then clips the จุดรวมงาน names mid-word (e.g. "กฟ").
+          // Measure the actual longest label and force at least that much room,
+          // capped so the bars themselves always keep some space too.
+          afterFit(scale) {
+            const ctx = scale.ctx;
+            ctx.save();
+            ctx.font = "11px 'Noto Sans Thai', sans-serif";
+            let maxW = 0;
+            (scale.chart.data.labels || []).forEach(lbl => { const w = ctx.measureText(String(lbl)).width; if (w > maxW) maxW = w; });
+            ctx.restore();
+            const desired = Math.ceil(maxW) + 14;
+            const cap = Math.max(70, scale.chart.width * 0.52);
+            scale.width = Math.min(Math.max(desired, 60), cap);
+          }
+        }
       }
     }
   });
@@ -1056,6 +1129,8 @@ function renderDeviceTypeChart(tab, rows) {
     data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-1'), borderRadius: 4, maxBarThickness: 30 }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      onClick: chartFieldClickHandler(tab, 'deviceType'),
+      onHover: chartHoverCursor,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
       scales: {
         x: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
@@ -1085,8 +1160,10 @@ function renderOperationChart(tab, rows) {
     data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: colors, borderColor: cssVar('--card'), borderWidth: 2 }] },
     options: {
       responsive: true, maintainAspectRatio: false, cutout: '62%',
+      onClick: chartFieldClickHandler(tab, 'operation'),
+      onHover: chartHoverCursor,
       plugins: {
-        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10, generateLabels: donutLegendLabels } },
+        legend: { position: 'bottom', onClick: chartFieldLegendClickHandler(tab, 'operation'), labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10, generateLabels: donutLegendLabels } },
         tooltip: { callbacks: { label: (item) => { const total = item.dataset.data.reduce((a, b) => a + b, 0); const pct = total ? Math.round(item.parsed / total * 100) : 0; return ' ' + item.label + ': ' + item.formattedValue + ' (' + pct + '%)'; } } }
       }
     }
@@ -1108,8 +1185,10 @@ function renderCauseKnownChart(tab, rows) {
     data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: entries.map(e => colorMap[e[0]]), borderColor: cssVar('--card'), borderWidth: 2 }] },
     options: {
       responsive: true, maintainAspectRatio: false, cutout: '62%',
+      onClick: chartFieldClickHandler(tab, 'causeKnown'),
+      onHover: chartHoverCursor,
       plugins: {
-        legend: { position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10, generateLabels: donutLegendLabels } },
+        legend: { position: 'bottom', onClick: chartFieldLegendClickHandler(tab, 'causeKnown'), labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10, generateLabels: donutLegendLabels } },
         tooltip: { callbacks: { label: (item) => { const total = item.dataset.data.reduce((a, b) => a + b, 0); const pct = total ? Math.round(item.parsed / total * 100) : 0; return ' ' + item.label + ': ' + item.formattedValue + ' (' + pct + '%)'; } } }
       }
     }
@@ -1130,6 +1209,8 @@ function renderCauseCategoryChart(tab, rows) {
     data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-1'), borderRadius: 4, maxBarThickness: 40 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
+      onClick: chartFieldClickHandler(tab, 'causeCategory'),
+      onHover: chartHoverCursor,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
       scales: {
         x: { grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 }, maxRotation: 0, autoSkip: false } },
@@ -1366,6 +1447,7 @@ function updateFilterCount(tab) {
   effectiveAvailable(tab).forEach(k => { if (f[k]) n++; });
   if (tab === 'oca' && f.pendingOnly) n++;
   if (tab === 'oca' && f.doneOnly) n++;
+  if (f.chartFilter) n++;
   document.getElementById('filterCount').textContent = n ? ('ใช้ตัวกรอง ' + n + ' รายการ') : '';
 }
 function updateRefreshBtn() {
@@ -1675,7 +1757,7 @@ document.getElementById('nextDayBtn').addEventListener('click', () => shiftDay(a
 document.getElementById('clearBtn').addEventListener('click', () => {
   const cfg = TABS[activeTab];
   const r = todayRange();
-  cfg.filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false, doneOnly: false };
+  cfg.filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false, doneOnly: false, chartFilter: null };
   cfg.state.listLimit = 20;
   refreshCascadeOptions(activeTab);
   renderAll();
