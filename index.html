@@ -186,6 +186,43 @@
   @media (max-width: 520px){
     .chart-scroll-outer{ max-height:320px; }
   }
+  /* Plain HTML/CSS bar list for the OCA status breakdown, instead of a canvas-drawn
+     chart. Canvas text measurement has a long-standing cross-browser reliability
+     problem with custom web fonts (mobile Safari/WebKit in particular can silently
+     use fallback-font metrics for canvas text even once the real font has loaded
+     for ordinary page text), which kept clipping the จุดรวมงาน names on phones and
+     iPads no matter how generously we tried to reserve space. Ordinary DOM text
+     never has that problem - it just wraps - so this sidesteps the issue entirely. */
+  .oca-status-list{ display:flex; flex-direction:column; gap:8px; padding:4px 2px; }
+  .oca-status-row{ display:flex; align-items:center; gap:10px; }
+  .oca-status-label{
+    flex:0 0 110px; font-size:11.5px; color:var(--text-secondary); line-height:1.3;
+    text-align:right; word-break:break-word;
+  }
+  .oca-status-track{
+    flex:1 1 auto; height:22px; background:var(--gridline); border-radius:5px;
+    overflow:hidden; min-width:0;
+  }
+  .oca-status-bar{ display:flex; height:100%; min-width:2px; }
+  .oca-status-seg{
+    display:flex; align-items:center; justify-content:center; height:100%;
+    font-size:11px; font-weight:700; color:#fff; cursor:pointer; min-width:0;
+  }
+  .oca-status-seg.done{ background:var(--good); }
+  .oca-status-seg.pending{ background:var(--warning); color:#3a2a00; }
+  .oca-status-seg:hover{ filter:brightness(1.08); }
+  .oca-status-legend{
+    display:flex; gap:16px; margin-top:12px; padding-top:10px; border-top:1px solid var(--border);
+    font-size:11.5px; color:var(--text-secondary);
+  }
+  .oca-legend-item{ display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .oca-legend-item.dimmed{ color:var(--text-muted); opacity:0.55; }
+  .oca-legend-dot{ width:10px; height:10px; border-radius:3px; display:inline-block; }
+  .oca-legend-dot.done{ background:var(--good); }
+  .oca-legend-dot.pending{ background:var(--warning); }
+  @media (max-width: 520px){
+    .oca-status-label{ flex-basis:88px; font-size:10.5px; }
+  }
   .empty-chart{
     display:flex; align-items:center; justify-content:center; height:100%;
     color:var(--text-muted); font-size:12.5px;
@@ -362,8 +399,12 @@
       <div class="chart-grid" id="ocaChartsGrid">
         <div class="chart-card full" id="ocaStatusCardWrap" style="display:none;">
           <h3>สถานะการคำนวณ OCA ตาม กฟฟ. จุดรวมงาน</h3>
-          <div class="cap">จำนวนเหตุการณ์ในแต่ละจุดรวมงาน แบ่งตามว่าคำนวณ OCA แล้วหรือยัง · คลิกป้ายกำกับด้านล่างกราฟเพื่อกรองรายการ</div>
-          <div class="chart-scroll-outer" id="ocaStatusScroll"><div class="chart-wrap" id="ocaStatusWrap"><canvas id="ocaStatusChart"></canvas></div></div>
+          <div class="cap">จำนวนเหตุการณ์ในแต่ละจุดรวมงาน แบ่งตามว่าคำนวณ OCA แล้วหรือยัง · คลิกที่แท่งหรือป้ายกำกับเพื่อกรองรายการ</div>
+          <div class="chart-scroll-outer" id="ocaStatusScroll"><div class="oca-status-list" id="ocaStatusList"></div></div>
+          <div class="oca-status-legend" id="ocaStatusLegend">
+            <span class="oca-legend-item" data-key="done"><span class="oca-legend-dot done"></span>OCA</span>
+            <span class="oca-legend-item" data-key="pending"><span class="oca-legend-dot pending"></span>ยังไม่ได้ดำเนินการ</span>
+          </div>
         </div>
       </div>
 
@@ -1040,11 +1081,24 @@ function chartFieldLegendClickHandler(tab, field) {
 function chartHoverCursor(evt, elements) {
   evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
 }
+// This one isn't a Chart.js canvas chart - it's a plain HTML/CSS bar list. Canvas
+// text measurement has a real, long-standing cross-browser reliability problem with
+// custom web fonts (mobile Safari/WebKit in particular can silently fall back to a
+// different font's metrics for canvas text even once the real font is confirmed
+// loaded and rendering fine everywhere else on the page), which kept clipping the
+// จุดรวมงาน names to a couple of characters on phones and iPads no matter how the
+// reserved axis width was computed. Ordinary DOM text has no such quirk - it just
+// wraps - so building this one out of <div>s instead of a <canvas> sidesteps the
+// whole class of bug rather than trying to out-guess it.
 function renderOcaStatusChart(tab, rows) {
-  const canvas = document.getElementById('ocaStatusChart');
-  const wrap = canvas.parentElement;
-  if (!chartLibReady('ocaStatusChart', wrap)) return;
-  if (rows.length === 0) { destroyChart('ocaStatus'); setChartEmpty('ocaStatusChart', wrap, true); return; }
+  const listEl = document.getElementById('ocaStatusList');
+  const legendEl = document.getElementById('ocaStatusLegend');
+  while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+  if (rows.length === 0) {
+    const empty = document.createElement('div'); empty.className = 'empty-state'; empty.textContent = 'ยังไม่มีข้อมูล';
+    listEl.appendChild(empty);
+    return;
+  }
   const map = new Map(); // wc -> {done, pending}
   rows.forEach(r => {
     let wc = cellText(F(tab, r, 'workcenter')).trim(); if (!wc) wc = 'ไม่ระบุ';
@@ -1058,99 +1112,49 @@ function renderOcaStatusChart(tab, rows) {
   const orderedNames = ALL_WORKCENTERS_ORDERED.slice();
   map.forEach((_, wc) => { if (!orderedNames.includes(wc)) orderedNames.push(wc); });
   const entries = orderedNames.map(wc => [wc, map.get(wc) || { done: 0, pending: 0 }]);
-  setChartEmpty('ocaStatusChart', wrap, false);
-  destroyChart('ocaStatus');
-  // Give the bar list enough vertical room for every office instead of a fixed 220px.
-  wrap.style.height = Math.max(220, entries.length * 26 + 30) + 'px';
-  chartInstances.ocaStatus = new Chart(canvas.getContext('2d'), {
-    type: 'bar',
-    plugins: [valueLabelsPlugin],
-    data: {
-      labels: entries.map(e => e[0]),
-      datasets: [
-        { label: 'OCA', data: entries.map(e => e[1].done), backgroundColor: cssVar('--good'), stack: 's', maxBarThickness: 20 },
-        { label: 'ยังไม่ได้ดำเนินการ', data: entries.map(e => e[1].pending), backgroundColor: cssVar('--warning'), stack: 's', maxBarThickness: 20 }
-      ]
-    },
-    options: {
-      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      onClick: (evt, elements, chart) => {
-        // Bars for a จุดรวมงาน with zero "OCA" (done) events have a zero-width green
-        // segment - there's nothing there to hit-test with intersect:true, so a tap
-        // near it (especially a fingertip on a phone) often found no element at all
-        // and silently did nothing. Instead: find the ROW forgivingly (mode 'index',
-        // no intersect needed - any tap on that bar's band counts), then work out
-        // which color the tap landed on by comparing its x position against the
-        // done/pending split for that row's actual values.
-        const rowHit = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
-        if (!rowHit.length) return;
-        const idx = rowHit[0].index;
-        const doneVal = chart.data.datasets[0].data[idx] || 0;
-        const pendingVal = chart.data.datasets[1].data[idx] || 0;
-        if (doneVal + pendingVal === 0) return;
-        const pos = Chart.helpers.getRelativePosition(evt, chart);
-        const xValue = chart.scales.x.getValueForPixel(pos.x);
-        const key = xValue <= doneVal ? 'done' : 'pending';
-        toggleOcaBarFilter(chart.data.labels[idx], key);
-      },
-      onHover: chartHoverCursor,
-      plugins: {
-        legend: {
-          position: 'bottom', onClick: onOcaLegendClick,
-          labels: {
-            color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10,
-            generateLabels: (chart) => {
-              const f = TABS.oca.filters;
-              return chart.data.datasets.map((ds, i) => {
-                const key = i === 0 ? 'done' : 'pending';
-                const dimmed = (f.doneOnly && key !== 'done') || (f.pendingOnly && key !== 'pending');
-                return {
-                  text: ds.label, fillStyle: ds.backgroundColor, strokeStyle: ds.backgroundColor,
-                  fontColor: dimmed ? cssVar('--text-muted') : cssVar('--text-secondary'),
-                  hidden: false, datasetIndex: i
-                };
-              });
-            }
-          }
-        },
-        tooltip: { callbacks: { label: (item) => ' ' + item.dataset.label + ': ' + item.formattedValue + ' ครั้ง' } }
-      },
-      scales: {
-        x: { stacked: true, beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
-        y: {
-          stacked: true, grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } },
-          // On narrow phone screens Chart.js can end up reserving too little width
-          // for this axis and then clips the จุดรวมงาน names mid-word (e.g. "กฟ").
-          // Measure the actual longest label and force at least that much room,
-          // capped so the bars themselves always keep some space too.
-          afterFit(scale) {
-            const labels = (scale.chart.data.labels || []).map(String);
-            let maxLen = 0;
-            labels.forEach(lbl => { if (lbl.length > maxLen) maxLen = lbl.length; });
-            // Mobile Safari/WebKit (iPhone, iPad) has a long-standing quirk where a
-            // custom web font that renders fine in ordinary page text is not yet
-            // "warmed up" for Canvas 2D text - ctx.measureText() silently falls back
-            // to a narrow placeholder-glyph metric, even after document.fonts.ready
-            // resolves. That made the measured width unreliable on phones/tablets
-            // specifically (desktop Chrome/Edge don't have this quirk), so on top of
-            // measuring, also compute a character-count-based estimate that doesn't
-            // depend on the font having loaded at all, and reserve whichever is larger.
-            const estByChars = maxLen * 9.5 + 20;
-            const ctx = scale.ctx;
-            ctx.save();
-            ctx.font = "11px 'Noto Sans Thai', sans-serif";
-            let maxW = 0;
-            labels.forEach(lbl => { const w = ctx.measureText(lbl).width; if (w > maxW) maxW = w; });
-            ctx.restore();
-            const desired = Math.max(Math.ceil(maxW) + 14, estByChars);
-            const cap = Math.max(90, scale.chart.width * 0.55);
-            scale.width = Math.min(Math.max(desired, 80), cap);
-          }
-        }
+  const maxTotal = Math.max(1, ...entries.map(e => e[1].done + e[1].pending));
+
+  entries.forEach(([wc, counts]) => {
+    const total = counts.done + counts.pending;
+    const row = document.createElement('div'); row.className = 'oca-status-row';
+    const label = document.createElement('div'); label.className = 'oca-status-label'; label.textContent = wc;
+    const track = document.createElement('div'); track.className = 'oca-status-track';
+    const bar = document.createElement('div'); bar.className = 'oca-status-bar';
+    // Bar length relative to the busiest office, so rows stay visually comparable
+    // (mirrors what a shared 0..max axis on a real chart would show).
+    bar.style.width = (total ? (total / maxTotal * 100) : 0) + '%';
+    if (total > 0) {
+      if (counts.done > 0) {
+        const seg = document.createElement('div'); seg.className = 'oca-status-seg done';
+        seg.style.width = (counts.done / total * 100) + '%';
+        seg.textContent = counts.done;
+        seg.title = wc + ' · OCA: ' + counts.done + ' ครั้ง';
+        seg.addEventListener('click', () => toggleOcaBarFilter(wc, 'done'));
+        bar.appendChild(seg);
+      }
+      if (counts.pending > 0) {
+        const seg = document.createElement('div'); seg.className = 'oca-status-seg pending';
+        seg.style.width = (counts.pending / total * 100) + '%';
+        seg.textContent = counts.pending;
+        seg.title = wc + ' · ยังไม่ได้ดำเนินการ: ' + counts.pending + ' ครั้ง';
+        seg.addEventListener('click', () => toggleOcaBarFilter(wc, 'pending'));
+        bar.appendChild(seg);
       }
     }
+    track.appendChild(bar);
+    row.appendChild(label);
+    row.appendChild(track);
+    listEl.appendChild(row);
   });
+
+  if (legendEl) {
+    const f = TABS.oca.filters;
+    legendEl.querySelectorAll('.oca-legend-item').forEach(item => {
+      const key = item.dataset.key;
+      const dimmed = (f.doneOnly && key !== 'done') || (f.pendingOnly && key !== 'pending');
+      item.classList.toggle('dimmed', dimmed);
+    });
+  }
 }
 
 /* ---------------- outage-tab daily-report charts ---------------- */
@@ -1520,17 +1524,25 @@ function renderBanners() {
   updateRefreshBtn();
 }
 const OUTAGE_CHART_IDS = ['deviceTypeChart', 'operationChart', 'causeKnownChart', 'causeCategoryChart'];
-const OCA_CHART_IDS = ['ocaStatusChart'];
 function renderEmptyPlaceholders() {
   const grid = document.getElementById('kpiGrid'); while (grid.firstChild) grid.removeChild(grid.firstChild);
   document.getElementById('outageChartsGrid').style.display = activeTab === 'outage' ? '' : 'none';
   document.getElementById('ocaChartsGrid').style.display = activeTab === 'oca' ? '' : 'none';
   document.getElementById('ocaStatusCardWrap').style.display = activeTab === 'oca' ? '' : 'none';
-  const ids = activeTab === 'outage' ? OUTAGE_CHART_IDS : OCA_CHART_IDS;
-  ids.forEach(id => {
-    const wrap = document.getElementById(id).parentElement;
-    setChartEmpty(id, wrap, true, TABS[activeTab].state.loading ? 'กำลังโหลด...' : 'ยังไม่มีข้อมูล');
-  });
+  if (activeTab === 'outage') {
+    OUTAGE_CHART_IDS.forEach(id => {
+      const wrap = document.getElementById(id).parentElement;
+      setChartEmpty(id, wrap, true, TABS[activeTab].state.loading ? 'กำลังโหลด...' : 'ยังไม่มีข้อมูล');
+    });
+  } else {
+    const listEl2 = document.getElementById('ocaStatusList');
+    if (listEl2) {
+      while (listEl2.firstChild) listEl2.removeChild(listEl2.firstChild);
+      const empty = document.createElement('div'); empty.className = 'empty-state';
+      empty.textContent = TABS[activeTab].state.loading ? 'กำลังโหลด...' : 'ยังไม่มีข้อมูล';
+      listEl2.appendChild(empty);
+    }
+  }
   const listEl = document.getElementById('evList'); while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
   document.getElementById('listCount').textContent = '';
   document.getElementById('moreBtn').style.display = 'none';
@@ -1753,6 +1765,12 @@ document.getElementById('brandRefreshBtn').addEventListener('click', () => {
   btn.classList.add('spin');
   setTimeout(() => btn.classList.remove('spin'), 900);
   loadSheetData(activeTab);
+});
+document.querySelectorAll('#ocaStatusLegend .oca-legend-item').forEach(item => {
+  item.addEventListener('click', () => {
+    TABS.oca.filters.workcenter = '';
+    toggleOcaCalcStatusFilter(item.dataset.key);
+  });
 });
 document.getElementById('exportBtn').addEventListener('click', () => {
   const tab = activeTab, cfg = TABS[tab];
