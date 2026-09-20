@@ -238,10 +238,10 @@
     padding:12px 13px; box-shadow:var(--shadow);
   }
   .ev-card.tl-alert{
-    border:3px solid transparent; border-radius:12px; padding:10px 11px;
-    background:
-      linear-gradient(var(--card), var(--card)) padding-box,
-      repeating-linear-gradient(45deg, rgba(208,59,59,0.45) 0 5px, rgba(208,59,59,0.14) 5px 10px) border-box;
+    border:2px solid #c62828; background:rgba(198,40,40,0.09);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .ev-card.tl-alert{ border-color:#e66767; background:rgba(230,103,103,0.14); }
   }
   .ev-top{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
   .ev-title{ font-size:13.5px; font-weight:700; }
@@ -1307,8 +1307,9 @@ function buildEventCard(tab, row) {
   let trtlClass = '';
   if (tab === 'outage') {
     const etype = cellText(F(tab, row, 'eventType')); if (etype) addTag(etype, /major|ใหญ่|รุนแรง/i.test(etype) ? 'status-bad' : '');
-    const trtl = classifyTRTL(cellText(F(tab, row, 'operation')));
-    if (trtl) { addTag(trtl, trtl === 'T/L' ? 'status-bad' : ''); if (trtl === 'T/L') trtlClass = 'tl-alert'; }
+    const opRaw = cellText(F(tab, row, 'operation')).trim();
+    const trtl = classifyTRTL(opRaw);
+    if (opRaw) { addTag(opRaw, trtl === 'T/L' ? 'status-bad' : ''); if (trtl === 'T/L') trtlClass = 'tl-alert'; }
     const known = cellText(F(tab, row, 'causeKnown'));
     if (known) { const bad = /ไม่ทราบ|✗|false|no/i.test(known); addTag(bad ? 'ไม่ทราบสาเหตุ' : 'ทราบสาเหตุ', bad ? 'status-bad' : 'status-good'); }
     addTag(cellText(F(tab, row, 'weather')));
