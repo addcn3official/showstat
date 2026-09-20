@@ -976,7 +976,29 @@ function toggleOcaCalcStatusFilter(key) {
   // click), throwing a console error. Let that finish first.
   setTimeout(renderAll, 0);
 }
+// Clicking a colored segment directly on a bar (as opposed to the legend below the
+// chart) should filter to that ONE จุดรวมงาน's row, not just the status across every
+// office - i.e. green on "กฟจ.ชัยนาท" means "OCA events done, at กฟจ.ชัยนาท only".
+// Clicking the same segment again clears both back to showing everything.
+function toggleOcaBarFilter(workcenter, key) {
+  const f = TABS.oca.filters;
+  const isDone = key === 'done';
+  const already = f.workcenter === workcenter && (isDone ? f.doneOnly : f.pendingOnly) && !(isDone ? f.pendingOnly : f.doneOnly);
+  if (already) {
+    f.workcenter = '';
+    f.doneOnly = false;
+    f.pendingOnly = false;
+  } else {
+    f.workcenter = workcenter;
+    f.doneOnly = isDone;
+    f.pendingOnly = !isDone;
+  }
+  setTimeout(renderAll, 0);
+}
 function onOcaLegendClick(evt, legendItem) {
+  // The legend below the chart represents the status across every จุดรวมงาน, not one
+  // row - so clear any single-office selection made by clicking a bar directly.
+  TABS.oca.filters.workcenter = '';
   toggleOcaCalcStatusFilter(legendItem.datasetIndex === 0 ? 'done' : 'pending');
 }
 
@@ -1051,15 +1073,23 @@ function renderOcaStatusChart(tab, rows) {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       onClick: (evt, elements, chart) => {
-        // The chart's hover/tooltip interaction mode is 'index' (whole-row), which
-        // always reports the "OCA" (done) dataset first regardless of which colored
-        // segment was actually tapped - so a tap on the orange "pending" part could
-        // wrongly be read as "done". Re-query with intersect:true to find the exact
-        // segment under the pointer instead of trusting the passed-in elements list.
-        const hit = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
-        if (!hit.length) return;
-        const key = hit[0].datasetIndex === 0 ? 'done' : 'pending';
-        toggleOcaCalcStatusFilter(key);
+        // Bars for a จุดรวมงาน with zero "OCA" (done) events have a zero-width green
+        // segment - there's nothing there to hit-test with intersect:true, so a tap
+        // near it (especially a fingertip on a phone) often found no element at all
+        // and silently did nothing. Instead: find the ROW forgivingly (mode 'index',
+        // no intersect needed - any tap on that bar's band counts), then work out
+        // which color the tap landed on by comparing its x position against the
+        // done/pending split for that row's actual values.
+        const rowHit = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+        if (!rowHit.length) return;
+        const idx = rowHit[0].index;
+        const doneVal = chart.data.datasets[0].data[idx] || 0;
+        const pendingVal = chart.data.datasets[1].data[idx] || 0;
+        if (doneVal + pendingVal === 0) return;
+        const pos = Chart.helpers.getRelativePosition(evt, chart);
+        const xValue = chart.scales.x.getValueForPixel(pos.x);
+        const key = xValue <= doneVal ? 'done' : 'pending';
+        toggleOcaBarFilter(chart.data.labels[idx], key);
       },
       onHover: chartHoverCursor,
       plugins: {
