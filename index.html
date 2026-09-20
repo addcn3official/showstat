@@ -80,13 +80,9 @@
     display:flex; align-items:center; justify-content:center; flex:0 0 auto;
   }
   .sidebar-toggle:hover{ background:var(--accent-wash); color:var(--series-1); }
-  .rail-brand{
-    text-align:center; font-size:22px; padding:6px 0 12px; width:100%;
-    background:none; border:none; cursor:pointer; font-family:inherit; color:inherit; line-height:1;
-  }
-  .rail-brand:hover{ opacity:0.75; }
-  .rail-brand:active{ transform:scale(0.94); }
-  .rail-brand.spin{ animation: spin 0.9s linear infinite; }
+  .sidebar-toggle:active{ transform:scale(0.94); }
+  .sidebar-toggle.spin{ animation: spin 0.9s linear infinite; }
+  .rail-brand{ text-align:center; font-size:22px; padding:6px 0 12px; }
   .rail-btn{
     display:flex; flex-direction:column; align-items:center; gap:4px;
     background:none; border:none; cursor:pointer; color:var(--text-secondary);
@@ -249,7 +245,7 @@
 <body>
 <div id="app">
   <nav class="rail" role="tablist" aria-label="เลือกชุดข้อมูล">
-    <button class="rail-brand" id="brandRefreshBtn" type="button" title="รีเฟรชข้อมูล">⚡</button>
+    <div class="rail-brand">⚡</div>
     <button class="rail-btn" role="tab" data-tab="outage" aria-selected="true">
       <span class="ic">🔌</span><span>เหตุการณ์<br>ไฟฟ้าขัดข้อง</span>
     </button>
@@ -262,6 +258,7 @@
     <div class="topbar">
       <div style="display:flex; align-items:center; gap:10px;">
         <button class="sidebar-toggle" id="sidebarToggle" aria-label="ซ่อน/แสดงแถบเมนู" title="ซ่อน/แสดงแถบเมนู">☰</button>
+        <button class="sidebar-toggle" id="brandRefreshBtn" type="button" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล">⚡</button>
         <div>
           <h1 id="pageTitle">สรุปเหตุการณ์ไฟฟ้าขัดข้อง</h1>
           <div class="sub" id="lastUpdated">ยังไม่ได้โหลดข้อมูล</div>
@@ -1135,8 +1132,8 @@ function renderOcaStatusChart(tab, rows) {
             (scale.chart.data.labels || []).forEach(lbl => { const w = ctx.measureText(String(lbl)).width; if (w > maxW) maxW = w; });
             ctx.restore();
             const desired = Math.ceil(maxW) + 14;
-            const cap = Math.max(70, scale.chart.width * 0.52);
-            scale.width = Math.min(Math.max(desired, 60), cap);
+            const cap = Math.max(80, scale.chart.width * 0.52);
+            scale.width = Math.min(Math.max(desired, 80), cap);
           }
         }
       }
@@ -1816,6 +1813,17 @@ loadReferenceData();
 hydrateFromCache('outage'); // instant first paint from last visit, while the real fetch runs below
 loadSheetData('outage');
 renderAll();
+
+// The Thai web font (Noto Sans Thai) loads asynchronously over the network. If a
+// chart draws before it finishes, canvas text measurement silently falls back to a
+// different font with different character widths - so the space we reserve for the
+// OCA status chart's จุดรวมงาน labels (measured with the *intended* font) can end up
+// too narrow for what actually gets drawn once the real font is ready, clipping the
+// label to a couple of characters. Once the font is confirmed loaded, do one clean
+// re-render so any chart drawn during that window gets fixed automatically.
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => { try { renderAll(); } catch (e) { /* noop */ } });
+}
 </script>
 </body>
 </html>
