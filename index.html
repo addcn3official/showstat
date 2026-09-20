@@ -80,7 +80,13 @@
     display:flex; align-items:center; justify-content:center; flex:0 0 auto;
   }
   .sidebar-toggle:hover{ background:var(--accent-wash); color:var(--series-1); }
-  .rail-brand{ text-align:center; font-size:22px; padding:6px 0 12px; }
+  .rail-brand{
+    text-align:center; font-size:22px; padding:6px 0 12px; width:100%;
+    background:none; border:none; cursor:pointer; font-family:inherit; color:inherit; line-height:1;
+  }
+  .rail-brand:hover{ opacity:0.75; }
+  .rail-brand:active{ transform:scale(0.94); }
+  .rail-brand.spin{ animation: spin 0.9s linear infinite; }
   .rail-btn{
     display:flex; flex-direction:column; align-items:center; gap:4px;
     background:none; border:none; cursor:pointer; color:var(--text-secondary);
@@ -243,7 +249,7 @@
 <body>
 <div id="app">
   <nav class="rail" role="tablist" aria-label="เลือกชุดข้อมูล">
-    <div class="rail-brand">⚡</div>
+    <button class="rail-brand" id="brandRefreshBtn" type="button" title="รีเฟรชข้อมูล">⚡</button>
     <button class="rail-btn" role="tab" data-tab="outage" aria-selected="true">
       <span class="ic">🔌</span><span>เหตุการณ์<br>ไฟฟ้าขัดข้อง</span>
     </button>
@@ -1208,7 +1214,7 @@ function renderCauseKnownChart(tab, rows) {
   const order = ['ทราบสาเหตุ', 'ไม่ทราบสาเหตุ'];
   const entries = order.filter(k => counts.has(k)).map(k => [k, counts.get(k)]);
   setChartEmpty('causeKnownChart', wrap, false);
-  const colorMap = { 'ทราบสาเหตุ': cssVar('--good'), 'ไม่ทราบสาเหตุ': cssVar('--series-1') };
+  const colorMap = { 'ทราบสาเหตุ': cssVar('--good'), 'ไม่ทราบสาเหตุ': cssVar('--series-2') };
   destroyChart('causeKnown');
   chartInstances.causeKnown = new Chart(canvas.getContext('2d'), {
     type: 'doughnut',
@@ -1236,7 +1242,7 @@ function renderCauseCategoryChart(tab, rows) {
   chartInstances.causeCategory = new Chart(canvas.getContext('2d'), {
     type: 'bar',
     plugins: [valueLabelsPlugin],
-    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-1'), borderRadius: 4, maxBarThickness: 40 }] },
+    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-4'), borderRadius: 4, maxBarThickness: 40 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       onClick: chartFieldClickHandler(tab, 'causeCategory'),
@@ -1733,6 +1739,12 @@ document.querySelectorAll('.rail-btn').forEach(btn => {
   });
 });
 document.getElementById('refreshBtn').addEventListener('click', () => loadSheetData(activeTab));
+document.getElementById('brandRefreshBtn').addEventListener('click', () => {
+  const btn = document.getElementById('brandRefreshBtn');
+  btn.classList.add('spin');
+  setTimeout(() => btn.classList.remove('spin'), 900);
+  loadSheetData(activeTab);
+});
 document.getElementById('exportBtn').addEventListener('click', () => {
   const tab = activeTab, cfg = TABS[tab];
   if (!cfg.state.loaded) return;
