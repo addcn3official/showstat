@@ -145,6 +145,40 @@
     font-size:11.5px; color:var(--series-1); font-weight:600; align-self:center; white-space:nowrap;
   }
 
+  /* ---------- multi-select (circuit filter) ---------- */
+  .multiselect{ position:relative; }
+  .multiselect-btn{
+    font-family:inherit; font-size:13px; padding:8px 28px 8px 9px; border-radius:9px;
+    border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);
+    width:100%; text-align:left; cursor:pointer; position:relative; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+  }
+  .multiselect-btn:focus{ outline:2px solid var(--series-1); outline-offset:1px; }
+  .multiselect-btn::after{
+    content:'▾'; position:absolute; right:9px; top:50%; transform:translateY(-50%);
+    color:var(--text-muted); font-size:11px;
+  }
+  .multiselect-btn.has-value{ color:var(--series-1); font-weight:600; }
+  .multiselect-panel{
+    position:absolute; top:calc(100% + 4px); left:0; z-index:30; min-width:100%; width:max-content; max-width:280px;
+    background:var(--card); border:1px solid var(--border); border-radius:10px;
+    box-shadow:var(--shadow); padding:8px; display:flex; flex-direction:column; gap:6px;
+  }
+  .multiselect-panel[hidden]{ display:none; }
+  .multiselect-actions{ display:flex; gap:10px; padding:0 2px 6px; border-bottom:1px solid var(--border); }
+  .ms-link{
+    font-family:inherit; background:none; border:none; padding:0; cursor:pointer;
+    font-size:11.5px; color:var(--series-1); font-weight:600;
+  }
+  .multiselect-list{ max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:1px; }
+  .multiselect-list label{
+    display:flex; align-items:center; gap:7px; font-size:12.5px; font-weight:400;
+    color:var(--text-primary); padding:6px 4px; border-radius:6px; cursor:pointer; letter-spacing:normal;
+  }
+  .multiselect-list label:hover{ background:var(--surface-1); }
+  .multiselect-list input[type="checkbox"]{ flex:0 0 auto; cursor:pointer; }
+  .multiselect-empty{ font-size:12px; color:var(--text-muted); padding:6px 4px; }
+
   /* ---------- state banners ---------- */
   .banner{
     border-radius:12px; padding:12px 14px; font-size:13px; margin-bottom:14px;
@@ -361,7 +395,16 @@
         </div>
         <div class="fgroup" data-field="circuit">
           <label>วงจร (รหัสอุปกรณ์)</label>
-          <select id="fCircuit"><option value="">ทั้งหมด</option></select>
+          <div class="multiselect" id="fCircuitWrap">
+            <button type="button" class="multiselect-btn" id="fCircuitBtn" aria-haspopup="listbox" aria-expanded="false">ทั้งหมด</button>
+            <div class="multiselect-panel" id="fCircuitPanel" hidden>
+              <div class="multiselect-actions">
+                <button type="button" class="ms-link" id="fCircuitSelectAll">เลือกทั้งหมด</button>
+                <button type="button" class="ms-link" id="fCircuitClearSel">ล้าง</button>
+              </div>
+              <div class="multiselect-list" id="fCircuitList"></div>
+            </div>
+          </div>
         </div>
         <div class="fgroup" data-field="pendingOnly" style="display:none; min-width:auto;">
           <label>&nbsp;</label>
@@ -498,7 +541,7 @@ const TABS = {
     availableFilters: ['province', 'workcenter', 'circuit']
   }
 };
-const FIELD_TO_INPUT = { province: 'fProvince', responsible: 'fResponsible', workcenter: 'fWorkcenter', substation: 'fSubstation', circuit: 'fCircuit' };
+const FIELD_TO_INPUT = { province: 'fProvince', responsible: 'fResponsible', workcenter: 'fWorkcenter', substation: 'fSubstation' };
 
 /* Official province → work-center → responsible-office hierarchy. Loaded live from
    the "Response" sheet (see loadReferenceData) rather than hardcoded, so it always
@@ -537,7 +580,7 @@ function todayRange() {
 }
 Object.keys(TABS).forEach(k => {
   const r = todayRange();
-  TABS[k].filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false, doneOnly: false, chartFilter: null };
+  TABS[k].filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: [], pendingOnly: false, doneOnly: false, chartFilter: null };
   TABS[k].state = { cols: null, rows: [], loading: false, loaded: false, error: null, lastFetch: null, listLimit: 20, fieldCols: null, dateCol: null, timeCol: null, usingCache: false, cachedAt: null };
 });
 let activeTab = 'outage';
@@ -851,9 +894,12 @@ function getFilteredRows(tab) {
     if (f.from && d && d < f.from) return false;
     if (f.to && d && d > f.to) return false;
     for (const key of avail) {
-      if (key === 'province') continue;
+      if (key === 'province' || key === 'circuit') continue; // handled separately below
       const val = f[key];
       if (val) { if (cellText(F(tab, row, key)).trim() !== val) return false; }
+    }
+    if (avail.includes('circuit') && f.circuit && f.circuit.length) {
+      if (!f.circuit.includes(cellText(F(tab, row, 'circuit')).trim())) return false;
     }
     if (f.province) {
       if (rowProvince(tab, row) !== f.province) return false;
@@ -1497,23 +1543,69 @@ function refreshCascadeOptions(tab) {
     } else {
       ckOptions = Array.from(dataValues(tab, 'circuit')).sort((a, b) => a.localeCompare(b, 'th'));
     }
-    fillSelectOptions('fCircuit', ckOptions, f.circuit);
-    if (!ckOptions.includes(f.circuit)) f.circuit = '';
+    renderCircuitOptions(ckOptions, f);
+    f.circuit = (f.circuit || []).filter(v => ckOptions.includes(v));
+    updateCircuitBtnLabel(f);
   }
 }
 function setSelectValue(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
+// Builds the checkbox list inside the circuit multi-select panel, preserving
+// whichever values are currently selected in f.circuit.
+function renderCircuitOptions(options, f) {
+  const listEl = document.getElementById('fCircuitList');
+  if (!listEl) return;
+  while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+  if (options.length === 0) {
+    const empty = document.createElement('div'); empty.className = 'multiselect-empty'; empty.textContent = 'ไม่มีตัวเลือก';
+    listEl.appendChild(empty);
+    return;
+  }
+  const selected = new Set(f.circuit || []);
+  options.forEach(opt => {
+    const label = document.createElement('label');
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = opt; cb.checked = selected.has(opt);
+    cb.addEventListener('change', () => {
+      const cur = new Set(TABS[activeTab].filters.circuit || []);
+      if (cb.checked) cur.add(opt); else cur.delete(opt);
+      TABS[activeTab].filters.circuit = Array.from(cur);
+      updateCircuitBtnLabel(TABS[activeTab].filters);
+      renderAll();
+    });
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(opt));
+    listEl.appendChild(label);
+  });
+}
+function updateCircuitBtnLabel(f) {
+  const btn = document.getElementById('fCircuitBtn');
+  if (!btn) return;
+  const n = (f.circuit || []).length;
+  btn.textContent = n === 0 ? 'ทั้งหมด' : (n === 1 ? f.circuit[0] : 'เลือก ' + n + ' รายการ');
+  btn.classList.toggle('has-value', n > 0);
+}
+function setCircuitPanelOpen(open) {
+  const panel = document.getElementById('fCircuitPanel');
+  const btn = document.getElementById('fCircuitBtn');
+  if (!panel || !btn) return;
+  panel.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
 function syncFilterControlsFromState(tab) {
   const f = TABS[tab].filters;
   document.getElementById('dateFrom').value = f.from ? toDateInputValue(f.from) : '';
   document.getElementById('dateTo').value = f.to ? toDateInputValue(f.to) : '';
   Object.keys(FIELD_TO_INPUT).forEach(key => setSelectValue(FIELD_TO_INPUT[key], f[key] || ''));
+  updateCircuitBtnLabel(f);
   const pendingCb = document.getElementById('fPendingOnly'); if (pendingCb) pendingCb.checked = !!f.pendingOnly;
   document.querySelectorAll('.preset-chip').forEach(btn => btn.setAttribute('aria-pressed', btn.dataset.preset === f.preset ? 'true' : 'false'));
 }
 function updateFilterCount(tab) {
   const f = TABS[tab].filters; let n = 0;
   if (f.preset !== 'today') n++;
-  effectiveAvailable(tab).forEach(k => { if (f[k]) n++; });
+  effectiveAvailable(tab).forEach(k => {
+    if (k === 'circuit') { if (f.circuit && f.circuit.length) n++; }
+    else if (f[k]) n++;
+  });
   if (tab === 'oca' && f.pendingOnly) n++;
   if (tab === 'oca' && f.doneOnly) n++;
   if (f.chartFilter) n++;
@@ -1831,12 +1923,32 @@ document.getElementById(FIELD_TO_INPUT['substation']).addEventListener('change',
   refreshCascadeOptions(activeTab); // narrows the circuit list to this station's codes
   renderAll();
 });
-['responsible', 'circuit'].forEach(key => {
+['responsible'].forEach(key => {
   document.getElementById(FIELD_TO_INPUT[key]).addEventListener('change', (e) => {
     TABS[activeTab].filters[key] = e.target.value;
     renderAll();
   });
 });
+document.getElementById('fCircuitBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const panel = document.getElementById('fCircuitPanel');
+  setCircuitPanelOpen(panel.hidden);
+});
+document.getElementById('fCircuitSelectAll').addEventListener('click', () => {
+  const opts = Array.from(document.querySelectorAll('#fCircuitList input[type="checkbox"]')).map(cb => cb.value);
+  TABS[activeTab].filters.circuit = opts;
+  document.querySelectorAll('#fCircuitList input[type="checkbox"]').forEach(cb => cb.checked = true);
+  updateCircuitBtnLabel(TABS[activeTab].filters);
+  renderAll();
+});
+document.getElementById('fCircuitClearSel').addEventListener('click', () => {
+  TABS[activeTab].filters.circuit = [];
+  document.querySelectorAll('#fCircuitList input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateCircuitBtnLabel(TABS[activeTab].filters);
+  renderAll();
+});
+document.getElementById('fCircuitPanel').addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => setCircuitPanelOpen(false));
 document.getElementById('fPendingOnly').addEventListener('change', (e) => {
   TABS[activeTab].filters.pendingOnly = e.target.checked;
   renderAll();
@@ -1846,7 +1958,7 @@ document.getElementById('nextDayBtn').addEventListener('click', () => shiftDay(a
 document.getElementById('clearBtn').addEventListener('click', () => {
   const cfg = TABS[activeTab];
   const r = todayRange();
-  cfg.filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: '', pendingOnly: false, doneOnly: false, chartFilter: null };
+  cfg.filters = { preset: 'today', from: r.from, to: r.to, province: '', responsible: '', workcenter: '', substation: '', circuit: [], pendingOnly: false, doneOnly: false, chartFilter: null };
   cfg.state.listLimit = 20;
   refreshCascadeOptions(activeTab);
   renderAll();
