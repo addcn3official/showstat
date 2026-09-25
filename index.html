@@ -443,6 +443,11 @@
           <div class="cap">จำนวนเหตุการณ์แยกตามสาเหตุ</div>
           <div class="chart-wrap"><canvas id="causeCategoryChart"></canvas></div>
         </div>
+        <div class="chart-card full">
+          <h3>สถิติการทำงานของรหัสอุปกรณ์</h3>
+          <div class="cap">จำนวนครั้งที่แต่ละรหัสอุปกรณ์เกิดเหตุการณ์ (10 อันดับแรก) · คลิกที่แท่งเพื่อกรองรายการ</div>
+          <div class="chart-wrap" style="height:320px;"><canvas id="circuitStatsChart"></canvas></div>
+        </div>
       </div>
 
       <div class="chart-grid" id="ocaChartsGrid">
@@ -929,7 +934,9 @@ function getFilteredRows(tab) {
 function computeKPIs(tab, rows) {
   const total = rows.length;
   if (tab === 'outage') {
-    let totalDur = 0; rows.forEach(r => totalDur += cellDurationMinutes(F(tab, r, 'duration')));
+    let totalDur = 0, durCount = 0;
+    rows.forEach(r => { const m = cellDurationMinutes(F(tab, r, 'duration')); if (m) { totalDur += m; durCount++; } });
+    const avgDur = durCount ? Math.round(totalDur / durCount) : 0;
     let knownCount = 0, knownTotal = 0;
     rows.forEach(r => {
       const t = cellText(F(tab, r, 'causeKnown')).trim();
@@ -940,7 +947,7 @@ function computeKPIs(tab, rows) {
     rows.forEach(r => { const t = cellText(F(tab, r, 'eventType')).trim(); if (/major|ใหญ่|รุนแรง/i.test(t)) majorCount++; });
     return [
       { label: 'จำนวนเหตุการณ์ทั้งหมด', value: total.toLocaleString('th-TH'), unit: 'ครั้ง' },
-      { label: 'รวมเวลาไฟดับ', value: formatMinutes(totalDur), unit: '' },
+      { label: 'เฉลี่ยเวลาไฟดับ', value: formatMinutes(avgDur), unit: '' },
       { label: 'เหตุการณ์ระดับ Major', value: majorCount.toLocaleString('th-TH'), unit: 'ครั้ง' },
       { label: 'อัตราทราบสาเหตุ', value: causeRate === null ? '—' : causeRate, unit: causeRate === null ? '' : '%' }
     ];
@@ -1243,6 +1250,31 @@ function renderDeviceTypeChart(tab, rows) {
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       onClick: chartFieldClickHandler(tab, 'deviceType'),
+      onHover: chartHoverCursor,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
+      scales: {
+        x: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
+        y: { grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } } }
+      }
+    }
+  });
+}
+function renderCircuitStatsChart(tab, rows) {
+  const canvas = document.getElementById('circuitStatsChart'); const wrap = canvas.parentElement;
+  if (!chartLibReady('circuitStatsChart', wrap)) return;
+  const counts = new Map();
+  rows.forEach(r => { let v = cellText(F(tab, r, 'circuit')).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
+  if (counts.size === 0) { destroyChart('circuitStats'); setChartEmpty('circuitStatsChart', wrap, true); return; }
+  const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  setChartEmpty('circuitStatsChart', wrap, false);
+  destroyChart('circuitStats');
+  chartInstances.circuitStats = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    plugins: [valueLabelsPlugin],
+    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-6'), borderRadius: 4, maxBarThickness: 22 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      onClick: chartFieldClickHandler(tab, 'circuit'),
       onHover: chartHoverCursor,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
       scales: {
@@ -1635,7 +1667,7 @@ function renderBanners() {
   }
   updateRefreshBtn();
 }
-const OUTAGE_CHART_IDS = ['deviceTypeChart', 'operationChart', 'causeKnownChart', 'causeCategoryChart'];
+const OUTAGE_CHART_IDS = ['deviceTypeChart', 'operationChart', 'causeKnownChart', 'causeCategoryChart', 'circuitStatsChart'];
 function renderEmptyPlaceholders() {
   const grid = document.getElementById('kpiGrid'); while (grid.firstChild) grid.removeChild(grid.firstChild);
   document.getElementById('outageChartsGrid').style.display = activeTab === 'outage' ? '' : 'none';
@@ -1684,6 +1716,7 @@ function renderAll() {
     try { renderOperationChart(tab, rows); } catch (e) { console.error('operation chart', e); }
     try { renderCauseKnownChart(tab, rows); } catch (e) { console.error('cause known chart', e); }
     try { renderCauseCategoryChart(tab, rows); } catch (e) { console.error('cause category chart', e); }
+    try { renderCircuitStatsChart(tab, rows); } catch (e) { console.error('circuit stats chart', e); }
   } else {
     const statusWrap = document.getElementById('ocaStatusCardWrap');
     const canCalcStatus = cfg.state.fieldCols && cfg.state.fieldCols.calcStatus;
