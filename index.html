@@ -1262,24 +1262,43 @@ function renderDeviceTypeChart(tab, rows) {
 function renderCircuitStatsChart(tab, rows) {
   const canvas = document.getElementById('circuitStatsChart'); const wrap = canvas.parentElement;
   if (!chartLibReady('circuitStatsChart', wrap)) return;
-  const counts = new Map();
-  rows.forEach(r => { let v = cellText(F(tab, r, 'circuit')).trim(); if (!v) v = 'ไม่ระบุ'; counts.set(v, (counts.get(v) || 0) + 1); });
+  // Split each circuit's count by T/R vs T/L (see classifyTRTL) so the bar itself
+  // shows the breaker-lockout mix, not just a raw total.
+  const counts = new Map(); // circuit -> { tr, tl, other, total }
+  rows.forEach(r => {
+    let v = cellText(F(tab, r, 'circuit')).trim(); if (!v) v = 'ไม่ระบุ';
+    const cls = classifyTRTL(cellText(F(tab, r, 'operation')));
+    if (!counts.has(v)) counts.set(v, { tr: 0, tl: 0, other: 0 });
+    const entry = counts.get(v);
+    if (cls === 'T/L') entry.tl++; else if (cls === 'T/R') entry.tr++; else entry.other++;
+  });
   if (counts.size === 0) { destroyChart('circuitStats'); setChartEmpty('circuitStatsChart', wrap, true); return; }
-  const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const entries = Array.from(counts.entries())
+    .sort((a, b) => (b[1].tr + b[1].tl + b[1].other) - (a[1].tr + a[1].tl + a[1].other))
+    .slice(0, 10);
   setChartEmpty('circuitStatsChart', wrap, false);
+  const hasOther = entries.some(e => e[1].other > 0);
+  const datasets = [
+    { label: 'T/R', data: entries.map(e => e[1].tr), backgroundColor: cssVar('--good'), maxBarThickness: 22 },
+    { label: 'T/L', data: entries.map(e => e[1].tl), backgroundColor: cssVar('--critical'), maxBarThickness: 22 }
+  ];
+  if (hasOther) datasets.push({ label: 'ไม่ระบุ', data: entries.map(e => e[1].other), backgroundColor: cssVar('--text-muted'), maxBarThickness: 22 });
   destroyChart('circuitStats');
   chartInstances.circuitStats = new Chart(canvas.getContext('2d'), {
     type: 'bar',
     plugins: [valueLabelsPlugin],
-    data: { labels: entries.map(e => e[0]), datasets: [{ data: entries.map(e => e[1]), backgroundColor: cssVar('--series-6'), borderRadius: 4, maxBarThickness: 22 }] },
+    data: { labels: entries.map(e => e[0]), datasets },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       onClick: chartFieldClickHandler(tab, 'circuit'),
       onHover: chartHoverCursor,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => ' ' + item.formattedValue + ' ครั้ง' } } },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, font: { family: FONT.family, size: 11 }, padding: 10 } },
+        tooltip: { callbacks: { label: (item) => ' ' + item.dataset.label + ': ' + item.formattedValue + ' ครั้ง' } }
+      },
       scales: {
-        x: { beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
-        y: { grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } } }
+        x: { stacked: true, beginAtZero: true, grid: { color: cssVar('--gridline') }, ticks: { precision: 0, color: cssVar('--text-muted'), font: FONT } },
+        y: { stacked: true, grid: { display: false }, ticks: { color: cssVar('--text-secondary'), font: { family: FONT.family, size: 11 } } }
       }
     }
   });
