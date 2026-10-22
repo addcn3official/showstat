@@ -558,6 +558,19 @@ let WORKCENTER_TO_RESPONSIBLES = {};
 // Canonical list of every กฟฟ.จุดรวมงาน in hierarchy order (province by province),
 // used so status charts always show every office - even ones with zero events right now.
 let ALL_WORKCENTERS_ORDERED = [];
+// Requested display order for the OCA status chart (กฟจ. offices first in this
+// specific order, then กฟส. offices) - overrides the raw Response-sheet order above.
+// Any office not listed here just falls back to wherever it already was.
+const WORKCENTER_DISPLAY_ORDER = [
+  'กฟจ.นครสวรรค์', 'กฟจ.ลพบุรี', 'กฟจ.เพชรบูรณ์', 'กฟจ.ชัยนาท', 'กฟจ.สิงห์บุรี', 'กฟจ.อุทัยธานี',
+  'กฟส.พัฒนานิคม', 'กฟส.ชัยบาดาล', 'กฟส.โคกสำโรง', 'กฟส.ตาคลี', 'กฟส.ลาดยาว', 'กฟส.หล่มสัก', 'กฟส.หนองไผ่'
+];
+function applyWorkcenterDisplayOrder(list) {
+  const known = new Set(list);
+  const head = WORKCENTER_DISPLAY_ORDER.filter(wc => known.has(wc));
+  const rest = list.filter(wc => !WORKCENTER_DISPLAY_ORDER.includes(wc));
+  return head.concat(rest);
+}
 // สถานีไฟฟ้า / รหัสอุปกรณ์ -> จังหวัด, loaded live from the "Province" sheet. Lets us
 // resolve a row's province directly from its station/circuit code when present,
 // falling back to the work-center hierarchy above otherwise.
@@ -729,7 +742,7 @@ function loadReferenceData() {
     });
     WORKCENTER_TO_PROVINCE = wc2prov;
     WORKCENTER_TO_RESPONSIBLES = wc2resp;
-    ALL_WORKCENTERS_ORDERED = ordered;
+    ALL_WORKCENTERS_ORDERED = applyWorkcenterDisplayOrder(ordered);
     referenceDataLoaded.response = true;
     populateProvinceOptions();
     Object.keys(TABS).forEach(t => { if (TABS[t].state.loaded) refreshCascadeOptions(t); });
