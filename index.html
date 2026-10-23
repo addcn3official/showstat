@@ -165,6 +165,12 @@
     box-shadow:var(--shadow); padding:8px; display:flex; flex-direction:column; gap:6px;
   }
   .multiselect-panel[hidden]{ display:none; }
+  .ms-search{
+    font-family:inherit; font-size:12.5px; padding:7px 9px; border-radius:8px;
+    border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);
+    width:100%;
+  }
+  .ms-search:focus{ outline:2px solid var(--series-1); outline-offset:1px; }
   .multiselect-actions{ display:flex; gap:10px; padding:0 2px 6px; border-bottom:1px solid var(--border); }
   .ms-link{
     font-family:inherit; background:none; border:none; padding:0; cursor:pointer;
@@ -398,6 +404,7 @@
           <div class="multiselect" id="fCircuitWrap">
             <button type="button" class="multiselect-btn" id="fCircuitBtn" aria-haspopup="listbox" aria-expanded="false">ทั้งหมด</button>
             <div class="multiselect-panel" id="fCircuitPanel" hidden>
+              <input type="text" class="ms-search" id="fCircuitSearch" placeholder="พิมพ์ค้นหารหัสอุปกรณ์...">
               <div class="multiselect-actions">
                 <button type="button" class="ms-link" id="fCircuitSelectAll">เลือกทั้งหมด</button>
                 <button type="button" class="ms-link" id="fCircuitClearSel">ล้าง</button>
@@ -518,7 +525,10 @@ const TABS = {
       voltage: 'ระดับแรงดัน',
       weather: 'อากาศ',
       operation: 'การทำงาน',
-      deviceType: 'ประเภทอุปกรณ์ป้องกัน'
+      deviceType: 'ประเภทอุปกรณ์ป้องกัน',
+      relay: 'รีเลย์ที่ทำงาน',
+      phase: 'เฟส',
+      distance: 'ระยะทาง'
     },
     availableFilters: ['province', 'workcenter', 'responsible', 'substation', 'circuit']
   },
@@ -1423,6 +1433,8 @@ function buildEventCard(tab, row) {
     const known = cellText(F(tab, row, 'causeKnown'));
     if (known) { const bad = /ไม่ทราบ|✗|false|no/i.test(known); addTag(bad ? 'ไม่ทราบสาเหตุ' : 'ทราบสาเหตุ', bad ? 'status-bad' : 'status-good'); }
     addTag(cellText(F(tab, row, 'weather')));
+    const phase = cellText(F(tab, row, 'phase')); if (phase) addTag('เฟส ' + phase);
+    const relay = cellText(F(tab, row, 'relay')); if (relay) addTag('รีเลย์ ' + relay);
   } else {
     const found = cellText(F(tab, row, 'found'));
     if (found) { const bad = /ไม่พบ/i.test(found); addTag(found, bad ? 'status-bad' : 'status-good'); }
@@ -1441,6 +1453,7 @@ function buildEventCard(tab, row) {
     const durMin = cellDurationMinutes(F(tab, row, 'duration'));
     if (durMin) metaParts.push('ไฟดับ: ' + formatMinutes(durMin));
     const area = cellText(F(tab, row, 'affectedArea')); if (area) metaParts.push('พื้นที่ผลกระทบ: ' + area);
+    const dist = cellText(F(tab, row, 'distance')); if (dist) metaParts.push('ระยะทาง: ' + dist + ' กม.');
   } else {
     const wc = cellText(F(tab, row, 'workcenter')); if (wc) metaParts.push('จุดรวมงาน: ' + wc);
     const dist = cellText(F(tab, row, 'distance')); if (dist) metaParts.push('ระยะทาง: ' + dist + ' กม.');
@@ -1627,6 +1640,7 @@ function renderCircuitOptions(options, f) {
   const selected = new Set(f.circuit || []);
   options.forEach(opt => {
     const label = document.createElement('label');
+    label.dataset.search = opt.toLowerCase();
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = opt; cb.checked = selected.has(opt);
     cb.addEventListener('change', () => {
       const cur = new Set(TABS[activeTab].filters.circuit || []);
@@ -1639,6 +1653,31 @@ function renderCircuitOptions(options, f) {
     label.appendChild(document.createTextNode(opt));
     listEl.appendChild(label);
   });
+  filterCircuitList(document.getElementById('fCircuitSearch').value || '');
+}
+// Typing in the search box just hides/shows rows already in the DOM - it never
+// changes what's selected, so "เลือกทั้งหมด"/"ล้าง" still act on the full option
+// list exactly as before, search or no search.
+function filterCircuitList(query) {
+  const q = query.trim().toLowerCase();
+  const listEl = document.getElementById('fCircuitList');
+  if (!listEl) return;
+  let anyVisible = false;
+  listEl.querySelectorAll('label[data-search]').forEach(label => {
+    const match = !q || label.dataset.search.includes(q);
+    label.style.display = match ? '' : 'none';
+    if (match) anyVisible = true;
+  });
+  let noMatch = listEl.querySelector('.multiselect-empty.no-match');
+  if (q && !anyVisible) {
+    if (!noMatch) {
+      noMatch = document.createElement('div'); noMatch.className = 'multiselect-empty no-match';
+      noMatch.textContent = 'ไม่พบรหัสอุปกรณ์ที่ตรงกับคำค้นหา';
+      listEl.appendChild(noMatch);
+    }
+  } else if (noMatch) {
+    noMatch.remove();
+  }
 }
 function updateCircuitBtnLabel(f) {
   const btn = document.getElementById('fCircuitBtn');
@@ -1653,6 +1692,10 @@ function setCircuitPanelOpen(open) {
   if (!panel || !btn) return;
   panel.hidden = !open;
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) {
+    const search = document.getElementById('fCircuitSearch');
+    if (search) { search.value = ''; filterCircuitList(''); setTimeout(() => search.focus(), 0); }
+  }
 }
 function syncFilterControlsFromState(tab) {
   const f = TABS[tab].filters;
@@ -1883,6 +1926,9 @@ function currentExportColumns(tab) {
       ['กฟฟ.ที่รับผิดชอบ', r => cellText(F(tab, r, 'responsible'))],
       ['ประเภทอุปกรณ์ป้องกัน', r => cellText(F(tab, r, 'deviceType'))],
       ['การทำงาน', r => cellText(F(tab, r, 'operation'))],
+      ['รีเลย์ที่ทำงาน', r => cellText(F(tab, r, 'relay'))],
+      ['เฟส', r => cellText(F(tab, r, 'phase'))],
+      ['ระยะทาง', r => cellText(F(tab, r, 'distance'))],
       ['ทราบ/ไม่ทราบสาเหตุ', r => cellText(F(tab, r, 'causeKnown'))],
       ['สาเหตุ', r => cellText(F(tab, r, 'cause'))],
       ['ประเภทสาเหตุ', r => cellText(F(tab, r, 'causeCategory'))],
@@ -2012,6 +2058,8 @@ document.getElementById('fCircuitClearSel').addEventListener('click', () => {
   updateCircuitBtnLabel(TABS[activeTab].filters);
   renderAll();
 });
+document.getElementById('fCircuitSearch').addEventListener('input', (e) => filterCircuitList(e.target.value));
+document.getElementById('fCircuitSearch').addEventListener('click', (e) => e.stopPropagation());
 document.getElementById('fCircuitPanel').addEventListener('click', (e) => e.stopPropagation());
 document.addEventListener('click', () => setCircuitPanelOpen(false));
 document.getElementById('fPendingOnly').addEventListener('change', (e) => {
