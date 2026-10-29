@@ -311,28 +311,36 @@
   .report-pager{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-secondary); font-weight:600; }
   .report-pager button{ padding:5px 10px; }
   .report-card-outer{ overflow-x:auto; padding-bottom:4px; }
+  /* Formal-but-modern palette for the exported report: deep purple + dark
+     gold, echoing the PEA mascot's colors, kept minimal (flat fills, thin
+     hairline rules instead of a full grid) rather than busy/decorative. */
   .report-card{
-    background:#ffffff; color:#1a1a1a; border:1px solid #e2e2e2; border-radius:14px;
-    padding:20px 22px; width:1080px; max-width:1080px; margin:0 auto; box-shadow:0 2px 10px rgba(0,0,0,0.08);
+    background:#ffffff; color:#2a2a2a; border:1px solid #e6e0f0; border-radius:16px;
+    padding:22px 24px; width:1080px; max-width:1080px; margin:0 auto; box-shadow:0 4px 18px rgba(61,21,82,0.10);
     font-family:"Noto Sans Thai", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, Arial, sans-serif;
   }
-  .report-header{ display:flex; align-items:center; gap:12px; border-bottom:2px solid #1e5fb8; padding-bottom:12px; margin-bottom:12px; }
-  .report-header-icon{ width:40px; height:40px; object-fit:contain; flex:0 0 auto; }
-  .report-header-title{ font-size:17px; font-weight:700; color:#1e5fb8; }
-  .report-header-sub{ font-size:13px; color:#555; margin-top:2px; font-weight:600; }
+  .report-header{ display:flex; align-items:center; gap:14px; border-bottom:3px solid #c9a227; padding-bottom:14px; margin-bottom:16px; }
+  .report-header-icon{ width:42px; height:42px; object-fit:contain; flex:0 0 auto; }
+  .report-header-title{ font-size:18px; font-weight:800; color:#3d1552; letter-spacing:.2px; }
+  .report-header-sub{ font-size:13px; color:#6b5b76; margin-top:3px; font-weight:600; }
   /* table-layout:fixed plus a colgroup of fixed percentage widths keeps every
      exported page the same physical width/column layout, whether or not a
      given page's rows happen to have long "สาเหตุ" text. */
   .report-table{ width:100%; table-layout:fixed; border-collapse:collapse; font-size:12px; background:#ffffff; }
-  .report-table th, .report-table td{ border:1px solid #ddd; padding:6px 8px; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .report-table th{ background:#f2f6fc; color:#1e5fb8; font-weight:700; white-space:normal; line-height:1.3; }
+  .report-table th, .report-table td{ padding:8px 10px; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border-bottom:1px solid #ece6f4; }
+  .report-table th{
+    background:linear-gradient(135deg,#3d1552,#5b2179); color:#f2d98e; font-weight:700;
+    white-space:normal; line-height:1.3; letter-spacing:.2px; border-bottom:3px solid #c9a227;
+  }
   .report-table td{ background:#ffffff; }
-  .report-table tr.rt-row-tl td{ background:rgba(198,40,40,0.08); }
+  .report-table tbody tr:last-child td{ border-bottom:none; }
+  .report-table tr.rt-row-tl td{ background:rgba(198,40,40,0.07); }
+  .report-table tr.rt-row-tl td:first-child{ box-shadow:inset 3px 0 0 #c62828; }
   .report-table td.rt-tl{ color:#c62828; font-weight:700; }
   .report-table td.rt-notfound{ color:#c62828; font-weight:600; }
   .report-empty{ text-align:center; color:#888; font-size:13px; padding:24px 0; }
-  .report-footer{ text-align:right; font-size:11.5px; color:#888; margin-top:10px; }
-  .report-table td.rt-no{ color:#888; font-weight:600; text-align:center; overflow:visible; text-overflow:clip; }
+  .report-footer{ text-align:right; font-size:11.5px; color:#8a7a9c; margin-top:12px; font-weight:600; }
+  .report-table td.rt-no{ color:#8a6fa8; font-weight:700; text-align:center; overflow:visible; text-overflow:clip; }
   .report-table td.rt-cause{ white-space:normal; overflow-wrap:break-word; text-overflow:clip; }
 
   /* ---------- responsive ---------- */
@@ -1653,10 +1661,17 @@ function getReportRows() {
     return true;
   }).sort((a, b) => {
     const da = cellDate(D('outage', a)), db = cellDate(D('outage', b));
-    if (da && db && da - db !== 0) return da - db;
-    const ta = cellText(Tm('outage', a)), tb = cellText(Tm('outage', b));
-    return ta.localeCompare(tb);
+    if (da && db && da - db !== 0) return da - db; // date ascending (เก่าสุดก่อน)
+    return timeToMinutes(cellText(Tm('outage', a))) - timeToMinutes(cellText(Tm('outage', b))); // then time ascending (น้อยไปมาก)
   });
+}
+// Parses a "H:MM" / "HH:MM[:SS]" time-of-day string into minutes-since-midnight
+// for numeric sorting - a plain string compare would wrongly sort "9:05" after
+// "10:05" whenever the sheet's hour isn't zero-padded.
+function timeToMinutes(text) {
+  const m = /^(\d{1,2}):(\d{2})/.exec((text || '').trim());
+  if (!m) return 0;
+  return (+m[1]) * 60 + (+m[2]);
 }
 function formatReportDateRangeLabel() {
   const opt = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
