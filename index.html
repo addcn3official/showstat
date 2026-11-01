@@ -1741,6 +1741,35 @@ function renderReportTab() {
   const pageRows = allRows.slice(reportState.page * REPORT_PAGE_SIZE, (reportState.page + 1) * REPORT_PAGE_SIZE);
   buildReportTableRows(tbody, pageRows, reportState.page * REPORT_PAGE_SIZE);
 }
+/* Thai text has no spaces between words, so a plain CSS wrap breaks lines at
+   arbitrary characters. When the browser supports Intl.Segmenter (Chrome/Edge),
+   we segment the text into words and insert <wbr> between them so the line
+   wraps at real word boundaries; overflow-wrap:break-word still applies as a
+   fallback for any single word wider than the column. Falls back to plain
+   text on browsers without Intl.Segmenter. */
+var THAI_WORD_SEGMENTER = (function () {
+  try {
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      return new Intl.Segmenter('th', { granularity: 'word' });
+    }
+  } catch (e) { /* not supported */ }
+  return null;
+})();
+function setWrappableThaiText(el, text) {
+  el.textContent = '';
+  if (!text) { el.textContent = text; return; }
+  if (THAI_WORD_SEGMENTER) {
+    try {
+      const parts = Array.from(THAI_WORD_SEGMENTER.segment(text), s => s.segment);
+      parts.forEach((part, i) => {
+        el.appendChild(document.createTextNode(part));
+        if (i < parts.length - 1) el.appendChild(document.createElement('wbr'));
+      });
+      return;
+    } catch (e) { /* fall through to plain text below */ }
+  }
+  el.textContent = text;
+}
 function buildReportTableRows(tbody, rows, startIndex) {
   rows.forEach((row, idx) => {
     const tr = document.createElement('tr');
@@ -1762,7 +1791,11 @@ function buildReportTableRows(tbody, rows, startIndex) {
     const cells = [noTxt, dateTxt, timeTxt || '—', circuitTxt, responsibleTxt, opTxt || '—', weatherTxt || '—', phaseTxt || '—', causeTxt];
     cells.forEach((text, i) => {
       const td = document.createElement('td');
-      td.textContent = text;
+      if (i === 6 || i === 8) {
+        setWrappableThaiText(td, text);
+      } else {
+        td.textContent = text;
+      }
       if (i === 0) td.classList.add('rt-no');
       if (i === 5 && trtl === 'T/L') td.classList.add('rt-tl');
       if (i === 6) td.classList.add('rt-weather');
