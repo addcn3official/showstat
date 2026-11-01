@@ -343,6 +343,7 @@
   .report-footer{ text-align:right; font-size:11.5px; color:#8a7a9c; margin-top:12px; font-weight:600; }
   .report-table td.rt-no{ color:#8a6fa8; font-weight:700; text-align:center; overflow:visible; text-overflow:clip; }
   .report-table td.rt-cause{ white-space:normal; overflow-wrap:break-word; text-overflow:clip; }
+  .report-table td.rt-weather{ white-space:normal; overflow-wrap:break-word; text-overflow:clip; }
 
   /* ---------- responsive ---------- */
   @media (max-width: 860px){
@@ -581,7 +582,7 @@
             <table class="report-table" id="reportTable">
               <colgroup>
                 <col style="width:5%"><col style="width:10%"><col style="width:7%"><col style="width:12%">
-                <col style="width:14%"><col style="width:9%"><col style="width:9%"><col style="width:5%">
+                <col style="width:12%"><col style="width:9%"><col style="width:11%"><col style="width:5%">
                 <col style="width:29%">
               </colgroup>
               <thead>
@@ -1764,6 +1765,7 @@ function buildReportTableRows(tbody, rows, startIndex) {
       td.textContent = text;
       if (i === 0) td.classList.add('rt-no');
       if (i === 5 && trtl === 'T/L') td.classList.add('rt-tl');
+      if (i === 6) td.classList.add('rt-weather');
       if (i === 8) {
         td.classList.add('rt-cause');
         if (notFound) td.classList.add('rt-notfound');
