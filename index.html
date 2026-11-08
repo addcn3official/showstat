@@ -1199,9 +1199,15 @@ function computeKPIs(tab, rows) {
     rows.forEach(r => { const t = cellText(F(tab, r, 'found')).trim(); if (t) { foundTotal++; if (!/ไม่พบ/i.test(t)) foundCount++; } });
     const foundRate = foundTotal ? Math.round(foundCount / foundTotal * 100) : null;
     const wcSet = new Set(rows.map(r => cellText(F(tab, r, 'workcenter')).trim()).filter(Boolean));
+    // อัตราการดำเนินการ OCA = เหตุการณ์ที่ช่อง "คิด OCA" บอกว่าทำแล้ว ÷ เหตุการณ์ OCA ทั้งหมดที่ต้องทำ
+    // (ใช้เกณฑ์เดียวกับกราฟสถานะการดำเนินการ OCA: ช่องว่างหรือมีคำว่า "ยัง" = ยังไม่ได้ดำเนินการ)
+    let ocaDone = 0;
+    rows.forEach(r => { if (classifyCalcStatus(cellText(F(tab, r, 'calcStatus'))) === 'done') ocaDone++; });
+    const ocaRate = total ? Math.round(ocaDone / total * 100) : null;
     return [
       { label: 'จำนวนเหตุการณ์ OCA', value: total.toLocaleString('th-TH'), unit: 'ครั้ง' },
-      { label: 'อัตราพบสาเหตุ', value: foundRate === null ? '—' : foundRate, unit: foundRate === null ? '' : '%' },
+      { label: 'อัตราการดำเนินการ OCA', value: ocaRate === null ? '—' : ocaRate, unit: ocaRate === null ? '' : '%',
+        sub: total ? ('ทำแล้ว ' + ocaDone.toLocaleString('th-TH') + ' จาก ' + total.toLocaleString('th-TH') + ' ครั้ง') : '' },
       { label: 'จุดรวมงานที่เกี่ยวข้อง', value: wcSet.size.toLocaleString('th-TH'), unit: 'แห่ง' },
       { label: 'ยังไม่พบสาเหตุ', value: (foundTotal - foundCount).toLocaleString('th-TH'), unit: 'ครั้ง' }
     ];
@@ -1218,6 +1224,7 @@ function renderKPIs(tab, rows) {
     val.appendChild(document.createTextNode(String(k.value)));
     if (k.unit) { const u = document.createElement('span'); u.className = 'unit'; u.textContent = k.unit; val.appendChild(u); }
     card.appendChild(lab); card.appendChild(val);
+    if (k.sub) { const sub = document.createElement('div'); sub.className = 'delta'; sub.textContent = k.sub; card.appendChild(sub); }
     grid.appendChild(card);
   });
 }
